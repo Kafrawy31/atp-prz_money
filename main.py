@@ -50,36 +50,54 @@ if uploaded_file is not None:
 
     # --- Sidebar filters ---
     st.sidebar.title("Filters")
-    use_adjusted_earnings = st.sidebar.checkbox("Show expected (adjusted) prize money for 2025", value=False)
+    use_adjusted_earnings = st.sidebar.checkbox("Show expected (adjusted) prize money for following year", value=False)
+
+    years = sorted(df['Year'].unique())
+    selected_years = st.sidebar.multiselect(
+        "Select Year(s)",
+        options=years,
+        default=years
+    )
 
     if use_adjusted_earnings:
-        selected_years = [2024]
         earnings_column = 'Net Prize Money (2025 Adjusted)'
     else:
-        years = sorted(df['Year'].unique())
-        selected_years = st.sidebar.multiselect(
-            "Select Year(s)",
-            options=years,
-            default=years
-        )
         earnings_column = 'Net Prize Money (Actual)'
 
     bin_type = st.sidebar.radio("Rank Bin Type", ["5s", "10s"])
+
     sgl_rank_min = int(df['sglrank'].min())
     sgl_rank_max = int(df['sglrank'].max())
     use_rank_filter = st.sidebar.checkbox("Use Rank Range Filter")
-
     if use_rank_filter:
-        sgl_rank_range = st.sidebar.slider(
-            "Select SGL Rank Range",
-            min_value=sgl_rank_min,
-            max_value=sgl_rank_max,
-            value=(sgl_rank_min, sgl_rank_max)
+        st.sidebar.write("Enter SGL Rank Range:")
+        sgl_rank_min_input = st.sidebar.number_input("Min SGL Rank", value=sgl_rank_min, min_value=sgl_rank_min, max_value=sgl_rank_max)
+        sgl_rank_max_input = st.sidebar.number_input("Max SGL Rank", value=sgl_rank_max, min_value=sgl_rank_min, max_value=sgl_rank_max)
+        sgl_rank_range = (sgl_rank_min_input, sgl_rank_max_input)
+
+    use_snumtrn_filter = st.sidebar.checkbox("Use SNUMTRN Filter")
+    if use_snumtrn_filter:
+        snumtrn_min = int(df['snumtrn'].min())
+        snumtrn_max = int(df['snumtrn'].max())
+        snumtrn_range = st.sidebar.slider(
+            "Select SNUMTRN Range",
+            min_value=snumtrn_min,
+            max_value=snumtrn_max,
+            value=(snumtrn_min, snumtrn_max)
         )
+
+    use_prize_money_filter = st.sidebar.checkbox("Use Prize Money Filter")
+    if use_prize_money_filter:
+        prize_min = int(df[earnings_column].min())
+        prize_max = int(df[earnings_column].max())
+        st.sidebar.write("Enter Prize Money Range:")
+        prize_min_input = st.sidebar.number_input("Min Prize Money", value=prize_min, min_value=prize_min, max_value=prize_max)
+        prize_max_input = st.sidebar.number_input("Max Prize Money", value=prize_max, min_value=prize_min, max_value=prize_max)
+        prize_range = (prize_min_input, prize_max_input)
 
     # --- Filtering logic ---
     filtered = df[df['Year'].isin(selected_years)].copy()
-    selected_bin = None  # Safe fallback
+    selected_bin = None
 
     if use_rank_filter:
         filtered = filtered[
@@ -87,7 +105,6 @@ if uploaded_file is not None:
             (filtered['sglrank'] <= sgl_rank_range[1])
         ]
     else:
-        # Always show bin selection when rank range filter is off
         if bin_type == "5s":
             selected_bin = st.sidebar.selectbox(
                 "Select Rank Bin (5s)",
@@ -101,7 +118,23 @@ if uploaded_file is not None:
             )
             filtered = filtered[filtered['Rank Bin (10s)'] == selected_bin]
 
+    if use_snumtrn_filter:
+        filtered = filtered[
+            (filtered['snumtrn'] >= snumtrn_range[0]) &
+            (filtered['snumtrn'] <= snumtrn_range[1])
+        ]
+
+    if use_prize_money_filter:
+        filtered = filtered[
+            (filtered[earnings_column] >= prize_range[0]) &
+            (filtered[earnings_column] <= prize_range[1])
+        ]
+
     earnings = filtered[earnings_column].sort_values().reset_index(drop=True)
+
+    # --- Rest of the script remains unchanged ---
+    # (Main title, histogram, density plot, ECDF, etc.)
+
 
     # --- Main title ---
     if use_adjusted_earnings:
