@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
 import plotly.express as px
+import plotly.graph_objects as go
 
 st.title("ATP Player Earnings by Rank Bin")
 
@@ -126,17 +127,26 @@ if uploaded_file is not None:
     if earnings.empty:
         st.warning("No data for selected combination.")
     else:
-        # 1) Histogram
-        st.subheader("Histogram of Net Prize Money (Counts)")
-        fig_hist = px.histogram(
-            filtered,
-            x=earnings_column,
-            nbins=15,
+        hist_fig = go.Figure()
+
+        hist_fig.add_trace(go.Histogram(
+            x=filtered[earnings_column],
+            nbinsx=15,
+            marker_color='skyblue',
+            texttemplate='%{y}',  # Show the count as text
+            textposition='outside',  # Place the text above the bars
+            name='Counts'
+        ))
+
+        hist_fig.update_layout(
             title="Prize Money Distribution (Counts)",
-            labels={earnings_column: "Prize Money"},
+            xaxis_title=earnings_column,
+            yaxis_title="Count",
+            xaxis_tickformat=',',
+            xaxis_tickangle=90
         )
-        fig_hist.update_layout(xaxis_tickformat=',', xaxis_tickangle=90, yaxis_title="Count")
-        st.plotly_chart(fig_hist)
+
+st.plotly_chart(hist_fig)
 
         # 2) Density curve
         st.subheader("Density Curve of Net Prize Money")
