@@ -87,19 +87,19 @@ if uploaded_file is not None:
             (filtered['sglrank'] <= sgl_rank_range[1])
         ]
     else:
-        if not use_adjusted_earnings:
-            if bin_type == "5s":
-                selected_bin = st.sidebar.selectbox(
-                    "Select Rank Bin (5s)",
-                    options=filtered['Rank Bin (5s)'].cat.categories
-                )
-                filtered = filtered[filtered['Rank Bin (5s)'] == selected_bin]
-            else:
-                selected_bin = st.sidebar.selectbox(
-                    "Select Rank Bin (10s)",
-                    options=filtered['Rank Bin (10s)'].cat.categories
-                )
-                filtered = filtered[filtered['Rank Bin (10s)'] == selected_bin]
+        # Always show bin selection when rank range filter is off
+        if bin_type == "5s":
+            selected_bin = st.sidebar.selectbox(
+                "Select Rank Bin (5s)",
+                options=filtered['Rank Bin (5s)'].cat.categories
+            )
+            filtered = filtered[filtered['Rank Bin (5s)'] == selected_bin]
+        else:
+            selected_bin = st.sidebar.selectbox(
+                "Select Rank Bin (10s)",
+                options=filtered['Rank Bin (10s)'].cat.categories
+            )
+            filtered = filtered[filtered['Rank Bin (10s)'] == selected_bin]
 
     earnings = filtered[earnings_column].sort_values().reset_index(drop=True)
 
@@ -125,7 +125,7 @@ if uploaded_file is not None:
         fig_hist = px.histogram(
             filtered,
             x=earnings_column,
-            nbins=8,
+            nbins=15,
             title="Prize Money Distribution (Counts)",
             labels={earnings_column: "Prize Money"},
         )
@@ -178,7 +178,7 @@ if uploaded_file is not None:
         ecdf_y = (earnings.rank(method='first') / len(earnings)).values
         ecdf_x = earnings.values
         median_val = earnings.median()
-        if not use_rank_filter and not use_adjusted_earnings:
+        if not use_rank_filter:
             ecdf_title = f"ECDF – Rank Bin {selected_bin}"
         elif use_rank_filter:
             ecdf_title = f"ECDF – SGL Rank Range {sgl_rank_range[0]} – {sgl_rank_range[1]}"
