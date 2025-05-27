@@ -143,7 +143,7 @@ if uploaded_file is not None:
             labels={earnings_column: "Prize Money"},
             text_auto=True  # Show counts above bars
         )
-
+        #test
         # Set padded y-range
         fig_hist.update_layout(
             yaxis=dict(range=[0, padded_max]),
