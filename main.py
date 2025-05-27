@@ -79,6 +79,7 @@ if uploaded_file is not None:
 
     # --- Filtering logic ---
     filtered = df[df['Year'].isin(selected_years)].copy()
+    selected_bin = None  # Safe fallback
 
     if use_rank_filter:
         filtered = filtered[
@@ -119,7 +120,7 @@ if uploaded_file is not None:
     if earnings.empty:
         st.warning("No data for selected combination.")
     else:
-        # 1) Histogram of counts
+        # 1) Histogram
         st.subheader("Histogram of Net Prize Money (Counts)")
         fig_hist = px.histogram(
             filtered,
@@ -128,19 +129,15 @@ if uploaded_file is not None:
             title="Prize Money Distribution (Counts)",
             labels={earnings_column: "Prize Money"},
         )
-        fig_hist.update_layout(
-            xaxis_tickformat=',',
-            xaxis_tickangle=90,
-            yaxis_title="Count"
-        )
+        fig_hist.update_layout(xaxis_tickformat=',', xaxis_tickangle=90, yaxis_title="Count")
         st.plotly_chart(fig_hist)
 
-        # 2) Density curve with ±1 SD
+        # 2) Density curve
         st.subheader("Density Curve of Net Prize Money")
         earnings_m = earnings / 1e6
         mean_val = earnings_m.mean()
         std_val = earnings_m.std()
-        lower_bound = mean_val - std_val
+        lower_bound = max(mean_val - std_val, 0)
         upper_bound = mean_val + std_val
 
         kde = gaussian_kde(earnings_m)
@@ -161,26 +158,17 @@ if uploaded_file is not None:
         fig_kde.update_layout(xaxis_tickformat=',', xaxis_tickangle=90)
         st.plotly_chart(fig_kde)
 
-        mean_display = f"""
-        <div style="background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;
-        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">
-        Mean: {mean_val * 1e6:,.2f}
-        </div>"""
-        upper_display = f"""
-        <div style="background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
-        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">
-        +1 SD: {upper_bound * 1e6:,.2f}
-        </div>"""
-        lower_display = f"""
-        <div style="background-color: #cce5ff; color: #004085; border: 1px solid #b8daff;
-        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">
-        −1 SD: {lower_bound * 1e6:,.2f}
-        </div>"""
-        combined_display = f"""
-        <div style='display: flex; gap: 1rem;'>{mean_display}{upper_display}{lower_display}</div>"""
+        # Mean, SD displays
+        mean_display = f"""<div style="background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;
+        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Mean: {mean_val * 1e6:,.2f}</div>"""
+        upper_display = f"""<div style="background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
+        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">+1 SD: {upper_bound * 1e6:,.2f}</div>"""
+        lower_display = f"""<div style="background-color: #cce5ff; color: #004085; border: 1px solid #b8daff;
+        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">−1 SD: {lower_bound * 1e6:,.2f}</div>"""
+        combined_display = f"""<div style='display: flex; gap: 1rem;'>{mean_display}{upper_display}{lower_display}</div>"""
         st.markdown(combined_display, unsafe_allow_html=True)
 
-        # Percentage within ±1 SD
+        # % within ±1 SD
         within_1sd = earnings_m[(earnings_m >= lower_bound) & (earnings_m <= upper_bound)]
         percent_within_1sd = (len(within_1sd) / len(earnings_m)) * 100
         st.info(f"Percentage of players within ±1 SD: {percent_within_1sd:.2f}%")
@@ -190,26 +178,23 @@ if uploaded_file is not None:
         ecdf_y = (earnings.rank(method='first') / len(earnings)).values
         ecdf_x = earnings.values
         median_val = earnings.median()
-        ecdf_title = (
-            f"ECDF – Rank Bin {selected_bin}"
-            if not use_rank_filter
-            else f"ECDF – SGL Rank Range {sgl_rank_range[0]} – {sgl_rank_range[1]}"
-        )
+        if not use_rank_filter and not use_adjusted_earnings:
+            ecdf_title = f"ECDF – Rank Bin {selected_bin}"
+        elif use_rank_filter:
+            ecdf_title = f"ECDF – SGL Rank Range {sgl_rank_range[0]} – {sgl_rank_range[1]}"
+        else:
+            ecdf_title = "ECDF – Expected Prize Money (2025)"
+
         fig_ecdf = px.line(
             x=ecdf_x,
             y=ecdf_y,
-            labels={'x': 'Net Prize Money (Actual)', 'y': 'Cumulative Proportion'},
+            labels={'x': earnings_column, 'y': 'Cumulative Proportion'},
             title=ecdf_title
         )
-        fig_ecdf.add_vline(
-            x=median_val,
-            line_dash="dash",
-            line_color="red",
-            annotation_text=f"Median: {median_val:,.0f}"
-        )
+        fig_ecdf.add_vline(x=median_val, line_dash="dash", line_color="red",
+                           annotation_text=f"Median: {median_val:,.0f}")
         fig_ecdf.update_layout(xaxis_tickformat=',', xaxis_tickangle=90)
         st.plotly_chart(fig_ecdf)
-
         st.success(f"Median Net Prize Money: {median_val:,.0f}")
 else:
     st.warning("Please upload the earnings data file to proceed.")
