@@ -127,26 +127,37 @@ if uploaded_file is not None:
     if earnings.empty:
         st.warning("No data for selected combination.")
     else:
-        hist_fig = go.Figure()
+        # Compute histogram counts directly using numpy
+        counts, bin_edges = np.histogram(filtered[earnings_column], bins=15)
+        max_count = max(counts)
 
-        hist_fig.add_trace(go.Histogram(
-            x=filtered[earnings_column],
-            nbinsx=15,
-            marker_color='skyblue',
-            texttemplate='%{y}',  # Show the count as text
-            textposition='outside',  # Place the text above the bars
-            name='Counts'
-        ))
+        # Apply 10% padding
+        padded_max = max_count * 1.8
 
-        hist_fig.update_layout(
+        # Create histogram figure
+        fig_hist = px.histogram(
+            filtered,
+            x=earnings_column,
+            nbins=15,
             title="Prize Money Distribution (Counts)",
-            xaxis_title=earnings_column,
+            labels={earnings_column: "Prize Money"},
+            text_auto=True  # Show counts above bars
+        )
+
+        # Set padded y-range
+        fig_hist.update_layout(
+            yaxis=dict(range=[0, padded_max]),
             yaxis_title="Count",
             xaxis_tickformat=',',
             xaxis_tickangle=90
         )
 
-st.plotly_chart(hist_fig)
+        # Show counts on hover
+        fig_hist.update_traces(
+            hovertemplate='Prize Money: %{x}<br>Count: %{y}<extra></extra>'
+        )
+
+        st.plotly_chart(fig_hist)
 
         # 2) Density curve
         st.subheader("Density Curve of Net Prize Money")
