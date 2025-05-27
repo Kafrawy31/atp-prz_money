@@ -280,7 +280,8 @@ if uploaded_file is not None:
 
         st.subheader(f"Density Curve of {plot_title_status} Net Prize Money")
         earnings_m = earnings / 1e6
-        mean_val = earnings_m.median()
+        mean_val = earnings_m.mean()
+        median_val = earnings_m.median()
         std_val = earnings_m.std()
         lower_bound = max(mean_val - std_val, 0) if not pd.isna(mean_val) and not pd.isna(std_val) else 0
         upper_bound = mean_val + std_val if not pd.isna(mean_val) and not pd.isna(std_val) else 0
@@ -294,7 +295,7 @@ if uploaded_file is not None:
                  title_text=f"Density of {plot_title_status} Prize Money for {years_str_for_plot_title} (with ±1 SD)",
                  xaxis_tickformat=',.3f', xaxis_tickangle=90
             )
-            fig_kde.add_vline(x=mean_val, line_color="green", line_dash="dot", annotation_text=f"Median: ${mean_val:,.3f}m")
+            fig_kde.add_vline(x=median_val, line_color="green", line_dash="dot", annotation_text=f"Median: ${median_val:,.3f}m")
             fig_kde.add_vline(x=lower_bound, line_color="red", line_dash="dash", annotation_text=f"−1 SD: ${lower_bound:,.3f}m")
             fig_kde.add_vline(x=upper_bound, line_color="red", line_dash="dash", annotation_text=f"+1 SD: ${upper_bound:,.3f}m")
             fig_kde.update_traces(hovertemplate=f'{earnings_column} (Millions): %{{x:.3f}}<br>Density: %{{y:.3f}}<extra></extra>')
@@ -334,6 +335,7 @@ if uploaded_file is not None:
             st.success(f"Median {plot_title_status} Net Prize Money: {median_val:,.0f}")
         else:
             st.info("Not enough data to generate ECDF plot.")
+# ... (previous parts of your script are assumed to be the same)
 
     # --- Shortfall Comparison Section ---
     st.markdown("---")
@@ -351,16 +353,14 @@ if uploaded_file is not None:
             available_actual_rank_years_in_df = df['Year'].unique()
             actual_shortfall_years_to_calc = [y for y in actual_shortfall_years_to_calc if y in available_actual_rank_years_in_df]
 
-    # Global check flags for actual shortfall calculation
     snumtrn_exists_globally = 'snumtrn' in df.columns
     carprz_exists_globally = 'carprz' in df.columns
 
     if not actual_shortfall_years_to_calc:
         st.info("No Rank Years selected or available for Actual Shortfall calculation based on current filters.")
     else:
-        st.subheader(f"Actual Shortfall Calculation (for Rank Year(s): {', '.join(map(str, sorted(list(set(actual_shortfall_years_to_calc)))))} using '{'Net Prize Money (Actual)'}')")
+        st.subheader(f"Actual Shortfall Analysis (for Rank Year(s): {', '.join(map(str, sorted(list(set(actual_shortfall_years_to_calc)))))} using '{'Net Prize Money (Actual)'}')")
         
-        # Display warnings for missing columns once before the loop for actual shortfall
         if not snumtrn_exists_globally:
             st.warning("Column 'snumtrn' not found. For Actual Shortfall, players cannot meet 'games played > 14' condition.")
         if not carprz_exists_globally:
@@ -368,58 +368,119 @@ if uploaded_file is not None:
 
         results_actual_shortfall = []
         for year_val in sorted(list(set(actual_shortfall_years_to_calc))):
-            df_year_actual = df[df['Year'] == year_val].copy() # Use .copy()
+            df_year_actual = df[df['Year'] == year_val].copy()
             
+            count_actual1, shortfall_actual1 = 0, 0
+            count_actual2, shortfall_actual2 = 0, 0
+            comment_for_year = None
+
             if df_year_actual.empty:
-                results_actual_shortfall.append({
-                    "Year": year_val, "Count_101_175": 0, "Shortfall_101_175": 0,
-                    "Count_176_250": 0, "Shortfall_176_250": 0, "comment": "No data for this year"
-                })
-                continue
-
-            base_mask_actual1 = (
-                df_year_actual['sglrank'].between(101, 175)
-                & (df_year_actual['Net Prize Money (Actual)'] < 200_000)
-            )
-            base_mask_actual2 = (
-                df_year_actual['sglrank'].between(176, 250)
-                & (df_year_actual['Net Prize Money (Actual)'] < 100_000)
-            )
-
-            if snumtrn_exists_globally:
-                snumtrn_filter_actual = (df_year_actual['snumtrn'] > 14)
+                comment_for_year = "No data for this year"
             else:
+                base_mask_actual1 = (
+                    df_year_actual['sglrank'].between(101, 175)
+                    & (df_year_actual['Net Prize Money (Actual)'] < 200_000)
+                )
+                base_mask_actual2 = (
+                    df_year_actual['sglrank'].between(176, 250)
+                    & (df_year_actual['Net Prize Money (Actual)'] < 100_000)
+                )
+
                 snumtrn_filter_actual = pd.Series(False, index=df_year_actual.index)
-            
-            if carprz_exists_globally:
-                carprz_filter_actual = (df_year_actual['carprz'] < 15_000_000)
-            else:
+                if snumtrn_exists_globally and 'snumtrn' in df_year_actual.columns: # Check specific df_year_actual too
+                    snumtrn_filter_actual = (df_year_actual['snumtrn'] > 14)
+                
                 carprz_filter_actual = pd.Series(False, index=df_year_actual.index)
+                if carprz_exists_globally and 'carprz' in df_year_actual.columns: # Check specific df_year_actual too
+                    carprz_filter_actual = (df_year_actual['carprz'] < 15_000_000)
 
-            mask_actual1 = base_mask_actual1 & snumtrn_filter_actual & carprz_filter_actual
-            count_actual1 = mask_actual1.sum()
-            shortfall_actual1 = (200_000 - df_year_actual.loc[mask_actual1, 'Net Prize Money (Actual)']).sum()
+                mask_actual1 = base_mask_actual1 & snumtrn_filter_actual & carprz_filter_actual
+                count_actual1 = mask_actual1.sum()
+                shortfall_actual1 = (200_000 - df_year_actual.loc[mask_actual1, 'Net Prize Money (Actual)']).sum()
 
-            mask_actual2 = base_mask_actual2 & snumtrn_filter_actual & carprz_filter_actual
-            count_actual2 = mask_actual2.sum()
-            shortfall_actual2 = (100_000 - df_year_actual.loc[mask_actual2, 'Net Prize Money (Actual)']).sum()
+                mask_actual2 = base_mask_actual2 & snumtrn_filter_actual & carprz_filter_actual
+                count_actual2 = mask_actual2.sum()
+                shortfall_actual2 = (100_000 - df_year_actual.loc[mask_actual2, 'Net Prize Money (Actual)']).sum()
             
             results_actual_shortfall.append({
                 "Year": year_val,
                 "Count_101_175": count_actual1, "Shortfall_101_175": shortfall_actual1,
-                "Count_176_250": count_actual2, "Shortfall_176_250": shortfall_actual2
+                "Count_176_250": count_actual2, "Shortfall_176_250": shortfall_actual2,
+                "comment": comment_for_year
             })
 
         if results_actual_shortfall:
-            for row_data in results_actual_shortfall:
+            actual_shortfall_df = pd.DataFrame(results_actual_shortfall)
+            actual_shortfall_df = actual_shortfall_df.sort_values(by='Year')
+            
+            # Filter out rows where comment indicates no data for plotting meaningful trends
+            plot_df = actual_shortfall_df[actual_shortfall_df['comment'].isna()].copy()
+
+            if not plot_df.empty and plot_df['Year'].nunique() > 0:
+                st.markdown("---")
+                st.subheader("Trend of Actual Shortfall Players by Year")
+                fig_count_trend = px.line(
+                    plot_df,
+                    x='Year',
+                    y=['Count_101_175', 'Count_176_250'],
+                    labels={'value': 'Number of Players', 'Year': 'Rank Year'},
+                    markers=True,
+                    title="Number of Players with Actual Shortfall by Rank Year"
+                )
+                count_trace_names = {
+                    'Count_101_175': 'Ranks 101-175 (Target < £200k)',
+                    'Count_176_250': 'Ranks 176-250 (Target < £100k)'
+                }
+                fig_count_trend.for_each_trace(lambda t: t.update(name=count_trace_names.get(t.name, t.name)))
+                fig_count_trend.update_layout(legend_title_text='Player Groups')
+                st.plotly_chart(fig_count_trend)
+
+                st.subheader("Trend of Actual Shortfall Amount by Year")
+                fig_amount_trend = px.line(
+                    plot_df,
+                    x='Year',
+                    y=['Shortfall_101_175', 'Shortfall_176_250'],
+                    labels={'value': 'Total Shortfall Amount (£)', 'Year': 'Rank Year'},
+                    markers=True,
+                    title="Actual Shortfall Amount by Rank Year"
+                )
+                amount_trace_names = {
+                    'Shortfall_101_175': 'Ranks 101-175 (Target < £200k)',
+                    'Shortfall_176_250': 'Ranks 176-250 (Target < £100k)'
+                }
+                fig_amount_trend.for_each_trace(lambda t: t.update(name=amount_trace_names.get(t.name, t.name)))
+                fig_amount_trend.update_layout(legend_title_text='Shortfall Amounts', yaxis_tickformat=',.0f')
+                st.plotly_chart(fig_amount_trend)
+            elif not actual_shortfall_df.empty : # Data exists but maybe all had comments or only one year
+                 st.info("Not enough yearly data points without comments to plot trends for actual shortfall.")
+
+
+            st.markdown("---")
+            st.subheader("Detailed Actual Shortfall by Year:")
+            for _, row_data in actual_shortfall_df.iterrows(): # Iterate original df to show all years
                 st.markdown(f"**Rank Year: {int(row_data['Year'])}**")
-                if row_data.get("comment"):
+                if row_data["comment"]:
                     st.write(row_data["comment"])
                     st.markdown("---")
                     continue
+                
                 col1_act, col2_act = st.columns(2)
-                col1_act.metric(label="Ranks 101–175: # below £200k (Actual)", value=int(row_data['Count_101_175']), delta=f"£{row_data['Shortfall_101_175']:,.0f} total actual shortfall", delta_color="off")
-                col2_act.metric(label="Ranks 176–250: # below £100k (Actual)", value=int(row_data['Count_176_250']), delta=f"£{row_data['Shortfall_176_250']:,.0f} total actual shortfall", delta_color="off")
+                col1_act.metric(
+                    label="Ranks 101–175: # below £200k (Actual)", 
+                    value=int(row_data['Count_101_175']), 
+                    delta=f"£{row_data['Shortfall_101_175']:,.0f} total actual shortfall", 
+                    delta_color="off"
+                )
+                col2_act.metric(
+                    label="Ranks 176–250: # below £100k (Actual)", 
+                    value=int(row_data['Count_176_250']), 
+                    delta=f"£{row_data['Shortfall_176_250']:,.0f} total actual shortfall", 
+                    delta_color="off"
+                )
                 st.markdown("---")
+        else:
+            # This case is hit if results_actual_shortfall list is empty after the loop
+            st.info("No data processed for Actual Shortfall calculation.")
+# ... (rest of your script, like the "else" for uploaded_file)
 else:
     st.warning("Please upload the earnings data CSV file to proceed.")
