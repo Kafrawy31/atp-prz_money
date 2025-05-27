@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
 import plotly.express as px
-import plotly.graph_objects as go
 
 st.title("ATP Player Earnings by Rank Bin")
 
@@ -11,7 +10,6 @@ st.title("ATP Player Earnings by Rank Bin")
 uploaded_file = st.file_uploader("Please upload the earnings data CSV file:", type="csv")
 
 if uploaded_file is not None:
-    # Load the uploaded data
     df = pd.read_csv(uploaded_file, parse_dates=["rankdate"])
 
     # Create bins for 5s and 10s
@@ -34,40 +32,27 @@ if uploaded_file is not None:
     # Set bins as ordered categorical
     def sorted_bin_categories(series: pd.Series) -> list[str]:
         cats = series.cat.categories
-        sorted_cats = sorted(cats, key=lambda lbl: int(lbl.split('-')[0]))
-        return sorted_cats
+        return sorted(cats, key=lambda lbl: int(lbl.split('-')[0]))
 
-    df['Rank Bin (5s)'] = df['Rank Bin (5s)'].astype('category')
-    df['Rank Bin (5s)'] = df['Rank Bin (5s)'].cat.set_categories(
-        sorted_bin_categories(df['Rank Bin (5s)']),
-        ordered=True
-    )
-    df['Rank Bin (10s)'] = df['Rank Bin (10s)'].astype('category')
-    df['Rank Bin (10s)'] = df['Rank Bin (10s)'].cat.set_categories(
-        sorted_bin_categories(df['Rank Bin (10s)']),
-        ordered=True
-    )
+    df['Rank Bin (5s)'] = df['Rank Bin (5s)'].astype('category').cat.set_categories(
+        sorted_bin_categories(df['Rank Bin (5s)']), ordered=True)
+    df['Rank Bin (10s)'] = df['Rank Bin (10s)'].astype('category').cat.set_categories(
+        sorted_bin_categories(df['Rank Bin (10s)']), ordered=True)
 
     # --- Sidebar filters ---
     st.sidebar.title("Filters")
     use_adjusted_earnings = st.sidebar.checkbox("Show expected (adjusted) prize money for following year", value=False)
 
-    years = sorted(df['Year'].unique())
-    selected_years = st.sidebar.multiselect(
-        "Select Year(s)",
-        options=years,
-        default=years
-    )
+    # Determine year column based on earnings type
+    year_column = 'Baseline Year' if use_adjusted_earnings else 'Year'
+    years = sorted(df[year_column].unique())
+    selected_years = st.sidebar.multiselect("Select Year(s)", options=years, default=years)
 
-    if use_adjusted_earnings:
-        earnings_column = 'Net Prize Money (2025 Adjusted)'
-    else:
-        earnings_column = 'Net Prize Money (Actual)'
+    earnings_column = 'Net Prize Money (2025 Adjusted)' if use_adjusted_earnings else 'Net Prize Money (Actual)'
 
     bin_type = st.sidebar.radio("Rank Bin Type", ["5s", "10s"])
 
-    sgl_rank_min = int(df['sglrank'].min())
-    sgl_rank_max = int(df['sglrank'].max())
+    sgl_rank_min, sgl_rank_max = int(df['sglrank'].min()), int(df['sglrank'].max())
     use_rank_filter = st.sidebar.checkbox("Use Rank Range Filter")
     if use_rank_filter:
         st.sidebar.write("Enter SGL Rank Range:")
@@ -75,60 +60,48 @@ if uploaded_file is not None:
         sgl_rank_max_input = st.sidebar.number_input("Max SGL Rank", value=sgl_rank_max, min_value=sgl_rank_min, max_value=sgl_rank_max)
         sgl_rank_range = (sgl_rank_min_input, sgl_rank_max_input)
 
-    use_snumtrn_filter = st.sidebar.checkbox("Use SNUMTRN Filter")
+    use_snumtrn_filter = st.sidebar.checkbox("Use Tourament Filter")
     if use_snumtrn_filter:
-        snumtrn_min = int(df['snumtrn'].min())
-        snumtrn_max = int(df['snumtrn'].max())
-        snumtrn_range = st.sidebar.slider(
-            "Select SNUMTRN Range",
-            min_value=snumtrn_min,
-            max_value=snumtrn_max,
-            value=(snumtrn_min, snumtrn_max)
-        )
+        snumtrn_min, snumtrn_max = int(df['snumtrn'].min()), int(df['snumtrn'].max())
+        snumtrn_range = st.sidebar.slider("Select number of touraments Range", min_value=snumtrn_min, max_value=snumtrn_max, value=(snumtrn_min, snumtrn_max))
+
+    use_carprz_filter = st.sidebar.checkbox("Use career prize Filter")
+    if use_carprz_filter:
+        carprz_min, carprz_max = int(df['carprz'].min()), int(df['carprz'].max())
+        st.sidebar.write("Enter career prize Range:")
+        carprz_min_input = st.sidebar.number_input("Min career prize", value=carprz_min, min_value=carprz_min, max_value=carprz_max)
+        carprz_max_input = st.sidebar.number_input("Max career prize", value=carprz_max, min_value=carprz_min, max_value=carprz_max)
+        carprz_range = (carprz_min_input, carprz_max_input)
 
     use_prize_money_filter = st.sidebar.checkbox("Use Prize Money Filter")
     if use_prize_money_filter:
-        prize_min = int(df[earnings_column].min())
-        prize_max = int(df[earnings_column].max())
+        prize_min, prize_max = int(df[earnings_column].min()), int(df[earnings_column].max())
         st.sidebar.write("Enter Prize Money Range:")
         prize_min_input = st.sidebar.number_input("Min Prize Money", value=prize_min, min_value=prize_min, max_value=prize_max)
         prize_max_input = st.sidebar.number_input("Max Prize Money", value=prize_max, min_value=prize_min, max_value=prize_max)
         prize_range = (prize_min_input, prize_max_input)
 
     # --- Filtering logic ---
-    filtered = df[df['Year'].isin(selected_years)].copy()
+    filtered = df[df[year_column].isin(selected_years)].copy()
     selected_bin = None
 
     if use_rank_filter:
-        filtered = filtered[
-            (filtered['sglrank'] >= sgl_rank_range[0]) &
-            (filtered['sglrank'] <= sgl_rank_range[1])
-        ]
+        filtered = filtered[(filtered['sglrank'] >= sgl_rank_range[0]) & (filtered['sglrank'] <= sgl_rank_range[1])]
     else:
-        if bin_type == "5s":
-            selected_bin = st.sidebar.selectbox(
-                "Select Rank Bin (5s)",
-                options=filtered['Rank Bin (5s)'].cat.categories
-            )
-            filtered = filtered[filtered['Rank Bin (5s)'] == selected_bin]
-        else:
-            selected_bin = st.sidebar.selectbox(
-                "Select Rank Bin (10s)",
-                options=filtered['Rank Bin (10s)'].cat.categories
-            )
-            filtered = filtered[filtered['Rank Bin (10s)'] == selected_bin]
+        selected_bin = st.sidebar.selectbox(
+            f"Select Rank Bin ({bin_type})",
+            options=filtered[f'Rank Bin ({bin_type})'].cat.categories
+        )
+        filtered = filtered[filtered[f'Rank Bin ({bin_type})'] == selected_bin]
 
     if use_snumtrn_filter:
-        filtered = filtered[
-            (filtered['snumtrn'] >= snumtrn_range[0]) &
-            (filtered['snumtrn'] <= snumtrn_range[1])
-        ]
+        filtered = filtered[(filtered['snumtrn'] >= snumtrn_range[0]) & (filtered['snumtrn'] <= snumtrn_range[1])]
+
+    if use_carprz_filter:
+        filtered = filtered[(filtered['carprz'] >= carprz_range[0]) & (filtered['carprz'] <= carprz_range[1])]
 
     if use_prize_money_filter:
-        filtered = filtered[
-            (filtered[earnings_column] >= prize_range[0]) &
-            (filtered[earnings_column] <= prize_range[1])
-        ]
+        filtered = filtered[(filtered[earnings_column] >= prize_range[0]) & (filtered[earnings_column] <= prize_range[1])]
 
     earnings = filtered[earnings_column].sort_values().reset_index(drop=True)
 
@@ -189,15 +162,20 @@ if uploaded_file is not None:
         fig_kde.add_vline(x=upper_bound, line_color="red", line_dash="dash",
                           annotation_text=f"+1 SD: ${upper_bound:,.3f}m")
         fig_kde.update_layout(xaxis_tickformat=',', xaxis_tickangle=90)
+        fig_kde.update_traces(
+    hovertemplate='Net Prize Money (Millions): %{x:.3f}<br>Density: %{y:.3f}<extra></extra>'
+)
+    
         st.plotly_chart(fig_kde)
+
 
         # Mean, SD displays
         mean_display = f"""<div style="background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;
-        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Mean: {mean_val * 1e6:,.2f}</div>"""
+        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Mean: ${mean_val * 1e6:,.0f}</div>"""
         upper_display = f"""<div style="background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
-        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">+1 SD: {upper_bound * 1e6:,.2f}</div>"""
+        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">+1 SD: ${upper_bound * 1e6:,.0f}</div>"""
         lower_display = f"""<div style="background-color: #cce5ff; color: #004085; border: 1px solid #b8daff;
-        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">−1 SD: {lower_bound * 1e6:,.2f}</div>"""
+        border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">−1 SD: ${lower_bound * 1e6:,.0f}</div>"""
         combined_display = f"""<div style='display: flex; gap: 1rem;'>{mean_display}{upper_display}{lower_display}</div>"""
         st.markdown(combined_display, unsafe_allow_html=True)
 
