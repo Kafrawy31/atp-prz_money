@@ -294,7 +294,7 @@ if uploaded_file is not None:
                  title_text=f"Density of {plot_title_status} Prize Money for {years_str_for_plot_title} (with ±1 SD)",
                  xaxis_tickformat=',.3f', xaxis_tickangle=90
             )
-            fig_kde.add_vline(x=mean_val, line_color="green", line_dash="dot", annotation_text=f"Mean: ${mean_val:,.3f}m")
+            fig_kde.add_vline(x=mean_val, line_color="green", line_dash="dot", annotation_text=f"Median: ${mean_val:,.3f}m")
             fig_kde.add_vline(x=lower_bound, line_color="red", line_dash="dash", annotation_text=f"−1 SD: ${lower_bound:,.3f}m")
             fig_kde.add_vline(x=upper_bound, line_color="red", line_dash="dash", annotation_text=f"+1 SD: ${upper_bound:,.3f}m")
             fig_kde.update_traces(hovertemplate=f'{earnings_column} (Millions): %{{x:.3f}}<br>Density: %{{y:.3f}}<extra></extra>')
