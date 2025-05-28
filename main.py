@@ -478,7 +478,7 @@ if uploaded_file is not None:
         ecdf_y_values = np.array([])
         ecdf_x_values = np.array([])
         median_val_ecdf = 0
-
+        # test
         if not earnings.empty:
             ecdf_x_values = earnings.values # Already sorted
             ecdf_y_values = (np.arange(1, len(earnings) + 1) / len(earnings)) # Correct ECDF y-values
