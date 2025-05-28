@@ -253,7 +253,7 @@ if uploaded_file is not None:
         max_count_hist = max(counts_hist) if len(counts_hist) > 0 else 0
         padded_max_hist = max_count_hist * 1.8 if max_count_hist > 0 else 10
 
-        fig_hist = px.histogram(x=earnings, nbins=15, labels={'x': earnings_column, 'y': 'Count'}, text_auto=True)
+        fig_hist = px.histogram(x=earnings, nbins=30, labels={'x': earnings_column, 'y': 'Count'}, text_auto=True)
         fig_hist.update_layout(
             title_text=f"Distribution of {plot_title_status} Prize Money for {years_str_for_plot_title}",
             yaxis=dict(range=[0, padded_max_hist]), yaxis_title="Count", xaxis_tickformat=',', xaxis_tickangle=90
