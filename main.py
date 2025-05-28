@@ -249,61 +249,329 @@ if uploaded_file is not None:
             years_str_for_plot_title = f"No {year_column}s Data"
 
         st.subheader("Prize Money Distribution")
-        counts_hist, bin_edges_hist = np.histogram(earnings, bins=15)
-        max_count_hist = max(counts_hist) if len(counts_hist) > 0 else 0
-        padded_max_hist = max_count_hist * 1.8 if max_count_hist > 0 else 10
+        if earnings.empty:
+            st.warning("No earnings data to plot for histogram.")
+        else:
+            actual_min_earning = earnings.min()
+            actual_max_earning = earnings.max()
 
-        fig_hist = px.histogram(x=earnings, nbins=30, labels={'x': earnings_column, 'y': 'Count'}, text_auto=True)
-        fig_hist.update_layout(
-            title_text=f"Distribution of {plot_title_status} Prize Money for {years_str_for_plot_title}",
-            yaxis=dict(range=[0, padded_max_hist]), yaxis_title="Count", xaxis_tickformat=',', xaxis_tickangle=90
-        )
-        fig_hist.update_traces(hovertemplate=f'{earnings_column}: %{{x}}<br>Count: %{{y}}<extra></extra>')
+            hist_range_x_min = 0
+            if actual_min_earning < 0: # Should not happen if prize money is always positive
+                hist_range_x_min = actual_min_earning
+            
+            hist_range_x_max = actual_max_earning
+            if actual_max_earning <= hist_range_x_min: # Handles cases like all earnings are 0
+                # Ensure a small positive range if min and max are the same (e.g. both 0)
+                hist_range_x_max = hist_range_x_min + (100000 if hist_range_x_min == 0 else abs(hist_range_x_min * 0.5) + 1)
+
+
+            num_bins = 30 # As in your current setting
+
+            # 1. Calculate histogram data (counts and bin edges) using numpy
+            counts_hist, bin_edges_hist = np.histogram(
+                earnings, 
+                bins=num_bins, 
+                range=(hist_range_x_min, hist_range_x_max)
+            )
+
+            # 2. Create string labels for each bin for the x-axis
+            bin_labels = []
+            for i in range(len(counts_hist)):
+                # Format with commas, no decimal places for pounds
+                label = f"£{bin_edges_hist[i]:,.0f} - £{bin_edges_hist[i+1]:,.0f}"
+                bin_labels.append(label)
+
+            # 3. Prepare data for Plotly Express bar chart
+            # We need this to pass custom data for hover information
+            hist_plot_data = pd.DataFrame({
+                'Bin_Range_Label': bin_labels,
+                'Player_Count': counts_hist,
+                'Bin_Lower_Edge': bin_edges_hist[:-1],
+                'Bin_Upper_Edge': bin_edges_hist[1:]
+            })
+
+            # 4. Calculate y-axis padding based on these counts
+            max_count_hist = max(counts_hist) if len(counts_hist) > 0 else 0
+            padded_max_hist = max_count_hist * 1.8 if max_count_hist > 0 else 10
+
+            # 5. Create the bar chart using px.bar
+            fig_hist = px.bar(
+                hist_plot_data,
+                x='Bin_Range_Label', 
+                y='Player_Count',
+                text='Player_Count', # Show counts on top of bars
+                # Pass other columns to custom_data for use in hovertemplate
+                custom_data=['Bin_Lower_Edge', 'Bin_Upper_Edge'] 
+            )
+            
+            # Position the text count above the bars
+            fig_hist.update_traces(textposition='outside')
+
+            # Customize layout: title, axis labels, tick rotation, hover data
+            fig_hist.update_layout(
+                title_text=f"Distribution of {plot_title_status} Prize Money for {years_str_for_plot_title}",
+                yaxis=dict(range=[0, padded_max_hist], title_text="Number of Players"),
+                xaxis=dict(
+                    title_text=f"{earnings_column} Bins",
+                    tickangle=-90, # Rotate labels vertically
+                    type='category' # Ensure x-axis is treated as categorical
+                ),
+                bargap=0.1 # Optional: adds a small gap between bars
+            )
+            
+            # Customize hovertemplate to show the actual numeric range of the bin
+            fig_hist.update_traces(
+                hovertemplate=(
+                    f"<b>{earnings_column} Range:</b> £%{{customdata[0]:,.0f}} - £%{{customdata[1]:,.0f}}<br>"
+                    "<b>Number of Players:</b> %{y}<extra></extra>"
+                )
+            )
+            
         st.plotly_chart(fig_hist)
-
+         # --- Density Curve of Net Prize Money ---
         st.subheader(f"Density Curve of {plot_title_status} Net Prize Money")
-        if earnings.empty or earnings.nunique() < 2:
+        if earnings.empty or earnings.nunique() < 2: # Check if earnings data is valid for KDE
             st.info("Not enough data points or variance to generate a density curve and its statistics.")
         else:
-            earnings_m = earnings / 1e6
+            earnings_m = earnings / 1e6  # Use 'earnings' Series, already filtered and cleaned
+
             median_val_m = earnings_m.median()
             abs_dev_from_median = (earnings_m - median_val_m).abs()
             mad_val_m = abs_dev_from_median.median()
             scaled_mad_m = mad_val_m * 1.4826 
-            lower_bound_mad = max(median_val_m - scaled_mad_m, 0)
+            lower_bound_mad = max(median_val_m - scaled_mad_m, 0) 
             upper_bound_mad = median_val_m + scaled_mad_m
+
             kde = gaussian_kde(earnings_m)
-            x_range_kde = np.linspace(earnings_m.min(), earnings_m.max(), 200)
+            # Ensure x_range_kde is reasonable even if earnings_m.min() == earnings_m.max()
+            min_earnings_m, max_earnings_m = earnings_m.min(), earnings_m.max()
+            if min_earnings_m == max_earnings_m:
+                x_range_kde = np.linspace(min_earnings_m - 0.1 * abs(min_earnings_m) if min_earnings_m != 0 else -0.1, 
+                                          max_earnings_m + 0.1 * abs(max_earnings_m) if max_earnings_m != 0 else 0.1, 
+                                          200)
+            else:
+                x_range_kde = np.linspace(min_earnings_m, max_earnings_m, 200)
+
             y_kde = kde(x_range_kde)
-            fig_kde = px.line(x=x_range_kde, y=y_kde, labels={'x': f'{earnings_column} (Millions)', 'y': 'Density'})
-            fig_kde.update_layout(title_text=f"Density of {plot_title_status} Prize Money for {years_str_for_plot_title} (Median & Scaled MAD)", xaxis_tickformat=',.3f', xaxis_tickangle=90)
-            fig_kde.add_vline(x=median_val_m, line_color="blue", line_dash="dot", annotation_text=f"Median: ${median_val_m:,.3f}m")
-            fig_kde.add_vline(x=lower_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"LMAD: ${lower_bound_mad:,.3f}m")
-            fig_kde.add_vline(x=upper_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"UMAD: ${upper_bound_mad:,.3f}m")
+            
+            fig_kde = px.line(
+                x=x_range_kde,
+                y=y_kde,
+                labels={'x': f'{earnings_column} (Millions)', 'y': 'Density'}
+            )
+            fig_kde.update_layout(
+                 title_text=f"Density of {plot_title_status} Prize Money for {years_str_for_plot_title} (Median & Scaled MAD)",
+                 xaxis_tickformat=',.3f', 
+                 xaxis_tickangle=90
+            )
+            
+            fig_kde.add_vline(x=median_val_m, line_color="blue", line_dash="dot", 
+                              annotation_text=f"${median_val_m:,.3f}m")
+            fig_kde.add_vline(x=lower_bound_mad, line_color="purple", line_dash="dash", 
+                              annotation_text=f"${lower_bound_mad:,.3f}m") # Your LMAD label
+            fig_kde.add_vline(x=upper_bound_mad, line_color="purple", line_dash="dash", 
+                              annotation_text=f"${upper_bound_mad:,.3f}m") # Your UMAD label
+            
+            # --- Add Relevant Guarantee Line ---
+            guarantee_map = [
+                {"min_r": 51,  "max_r": 100, "value": 300_000, "label_short": "G'tee (51-100)", "label_full": "Guarantee (51-100: £300k)"},
+                {"min_r": 101, "max_r": 175, "value": 200_000, "label_short": "G'tee (101-175)", "label_full": "Guarantee (101-175: £200k)"},
+                {"min_r": 176, "max_r": 250, "value": 100_000, "label_short": "G'tee (176-250)", "label_full": "Guarantee (176-250: £100k)"},
+            ]
+
+            relevant_guarantee_info = None
+            if not filtered.empty and 'sglrank' in filtered.columns and filtered['sglrank'].nunique() > 0:
+                data_min_rank = filtered['sglrank'].min()
+                data_max_rank = filtered['sglrank'].max()
+                # Use median rank of the filtered data as a representative point
+                data_median_rank = filtered['sglrank'].median() 
+
+                for g_info in guarantee_map:
+                    # Check if the median rank of the currently filtered data falls within this guarantee band
+                    if g_info["min_r"] <= data_median_rank <= g_info["max_r"]:
+                        # Further check: is the current filter focused enough on this band?
+                        # e.g. if rank filter is (50,100) or (100,150) or selected_bin is "51-60"
+                        # This is a heuristic to make sure the guarantee line is contextually relevant.
+                        # If using rank range filter:
+                        if use_rank_filter and sgl_rank_range[0] >= g_info["min_r"] and sgl_rank_range[1] <= g_info["max_r"]:
+                             relevant_guarantee_info = g_info
+                             break
+                        # If using selected_bin filter:
+                        elif not use_rank_filter and selected_bin:
+                            try:
+                                bin_start = int(selected_bin.split('-')[0])
+                                bin_end = int(selected_bin.split('-')[1])
+                                if bin_start >= g_info["min_r"] and bin_end <= g_info["max_r"]:
+                                    relevant_guarantee_info = g_info
+                                    break
+                            except: pass # Ignore parsing errors for selected_bin
+                        # Fallback: if no strict filter match but median rank is in a guarantee band,
+                        # and the rank span isn't too wide (e.g. not "All ranks")
+                        elif (data_max_rank - data_min_rank) < ( (g_info["max_r"] - g_info["min_r"]) + 50 ): # Max 50 ranks wider than the guarantee bin
+                             relevant_guarantee_info = g_info
+                             break # Take the first one it broadly qualifies for
+
+            if relevant_guarantee_info:
+                guarantee_val_m = relevant_guarantee_info["value"] / 1_000_000 # Convert to millions
+                annotation_text_for_line = f"{relevant_guarantee_info['label_short']}: ${guarantee_val_m:,.3f}m"
+                
+                # Only plot if the guarantee line is meaningfully within the plot's x-axis range
+                plot_x_min, plot_x_max = min_earnings_m, max_earnings_m
+                if plot_x_min == plot_x_max : # Adjust if all earnings are same value
+                    plot_x_min = plot_x_min - 0.1 if plot_x_min !=0 else -0.1
+                    plot_x_max = plot_x_max + 0.1 if plot_x_max !=0 else 0.1
+
+                # Ensure the line is visible and annotation has space
+                if (plot_x_min - 0.05 * (plot_x_max - plot_x_min)) <= guarantee_val_m <= (plot_x_max + 0.05 * (plot_x_max - plot_x_min)):
+                    fig_kde.add_vline(
+                        x=guarantee_val_m,
+                        line_color="seagreen", # A distinct color
+                        line_dash="longdashdot",
+                        annotation_text=annotation_text_for_line,
+                        annotation_position="bottom right" # Adjust as needed for best visibility
+                    )
+            # --- End Add Relevant Guarantee Line ---
+
+            # fig_kde.update_traces(hovertemplate=f'{earnings_column} (Millions): %{{x:.3f}}<br>Density: %{{y:.3f}}<extra></extra>')
+            # st.plotly_chart(fig_kde)
+
+            median_display_html = f"""<div style="background-color: #e0e0ff; color: #000080; border: 1px solid #b0b0e0; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Median: ${median_val_m * 1e6:,.0f}</div>"""
+            upper_mad_display_html = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Upper Bound: ${upper_bound_mad * 1e6:,.0f}</div>"""
+            lower_mad_display_html = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Lower Bound: ${lower_bound_mad * 1e6:,.0f}</div>"""
+            
+            guarantee_display_html = "" # Initialize as empty string
+
+            # 'relevant_guarantee_info' is determined when plotting the vline on KDE
+            if relevant_guarantee_info: # Check if a relevant guarantee was found and plotted
+                guarantee_value_raw = relevant_guarantee_info["value"]
+                # Use the full label which already includes the rank and value
+                guarantee_text_for_box = f"{relevant_guarantee_info['label_full']}" 
+                
+                guarantee_display_html = f"""<div style="background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">{guarantee_text_for_box}</div>"""
+
+            # Assemble the HTML for all boxes
+            # Using flex-wrap: wrap to allow items to wrap to the next line if they don't fit.
+            display_elements = [lower_mad_display_html]
+            display_elements.extend([median_display_html, upper_mad_display_html])
+            if guarantee_display_html: # Add guarantee next to median if it exists
+                display_elements.append(guarantee_display_html)
+            
+            combined_display_html = f"""<div style='display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;'>{''.join(display_elements)}</div>"""
+            
+            # This markdown should come AFTER st.plotly_chart(fig_kde)
+            # So, let's make sure st.plotly_chart(fig_kde) is called before these HTML stats
+            
             fig_kde.update_traces(hovertemplate=f'{earnings_column} (Millions): %{{x:.3f}}<br>Density: %{{y:.3f}}<extra></extra>')
-            st.plotly_chart(fig_kde)
-            median_display = f"""<div style="background-color: #e0e0ff; color: #000080; border: 1px solid #b0b0e0; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Median: ${median_val_m * 1e6:,.0f}</div>"""
-            upper_mad_display = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Median + Scaled MAD: ${upper_bound_mad * 1e6:,.0f}</div>"""
-            lower_mad_display = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Median − Scaled MAD: ${lower_bound_mad * 1e6:,.0f}</div>"""
-            combined_mad_display = f"""<div style='display: flex; gap: 1rem;'>{median_display}{upper_mad_display}{lower_mad_display}</div>"""
-            st.markdown(combined_mad_display, unsafe_allow_html=True)
+            # Add a unique key to the plotly_chart call
+            st.plotly_chart(fig_kde, key="kde_density_plot") # Display the chart first 
+
+            st.markdown(combined_display_html, unsafe_allow_html=True) # Then display the HTML boxes
+
             within_mad_bounds = earnings_m[(earnings_m >= lower_bound_mad) & (earnings_m <= upper_bound_mad)]
             percent_within_mad_bounds = (len(within_mad_bounds) / len(earnings_m)) * 100 if len(earnings_m) > 0 else 0
             st.info(f"Percentage of players within Median ± Scaled MAD: {percent_within_mad_bounds:.2f}%")
             st.markdown("""**Note on Scaled MAD:** The Median Absolute Deviation (MAD) is a robust measure of spread. It is scaled here by a factor of ~1.4826 to make it comparable to the standard deviation for data that is approximately normally distributed. The interval 'Median ± Scaled MAD' provides a robust alternative to 'Mean ± Standard Deviation'.""")
 
         st.subheader("Empirical Cumulative Distribution Function (ECDF)")
-        ecdf_y = (earnings.rank(method='first') / len(earnings)).values if len(earnings) > 0 else np.array([])
-        ecdf_x = earnings.values
-        median_val_ecdf = earnings.median() if not earnings.empty else 0
+        # earnings Series is already defined from filtered data, sorted, and NaNs dropped
+        
+        ecdf_y_values = np.array([])
+        ecdf_x_values = np.array([])
+        median_val_ecdf = 0
+
+        if not earnings.empty:
+            ecdf_x_values = earnings.values # Already sorted
+            ecdf_y_values = (np.arange(1, len(earnings) + 1) / len(earnings)) # Correct ECDF y-values
+            median_val_ecdf = earnings.median()
+
         rank_info_for_ecdf = f"SGL Rank Range {sgl_rank_range[0]}–{sgl_rank_range[1]}" if use_rank_filter else f"Rank Bin {selected_bin if selected_bin else 'N/A'}"
         ecdf_title_text = f"ECDF of {plot_title_status} Prize Money for {years_str_for_plot_title} ({rank_info_for_ecdf})"
-        if len(ecdf_x) > 0 and len(ecdf_y) > 0:
-            fig_ecdf = px.line(x=ecdf_x, y=ecdf_y, labels={'x': earnings_column, 'y': 'Cumulative Proportion'}, title=ecdf_title_text)
-            fig_ecdf.add_vline(x=median_val_ecdf, line_dash="dash", line_color="red", annotation_text=f"Median: {median_val_ecdf:,.0f}")
+        
+        if len(ecdf_x_values) > 0 and len(ecdf_y_values) > 0:
+            fig_ecdf = px.line(
+                x=ecdf_x_values, 
+                y=ecdf_y_values, 
+                labels={'x': earnings_column, 'y': 'Cumulative Proportion'}, 
+                title=ecdf_title_text
+            )
+            fig_ecdf.add_vline(
+                x=median_val_ecdf, 
+                line_dash="dash", 
+                line_color="red", 
+                annotation_text=f"Median: £{median_val_ecdf:,.0f}"
+            )
+
+            # --- Add Relevant Guarantee Line to ECDF ---
+            # Determine relevant guarantee (similar logic to KDE, using 'filtered' DataFrame)
+            ecdf_relevant_guarantee_info = None 
+            if not filtered.empty and 'sglrank' in filtered.columns and filtered['sglrank'].nunique() > 0:
+                data_median_rank = filtered['sglrank'].median()
+                for g_info in guarantee_map: # Uses guarantee_map from KDE section
+                    if g_info["min_r"] <= data_median_rank <= g_info["max_r"]:
+                        if use_rank_filter and sgl_rank_range[0] >= g_info["min_r"] and sgl_rank_range[1] <= g_info["max_r"]:
+                             ecdf_relevant_guarantee_info = g_info
+                             break
+                        elif not use_rank_filter and selected_bin:
+                            try:
+                                bin_start = int(selected_bin.split('-')[0])
+                                bin_end = int(selected_bin.split('-')[1])
+                                if bin_start >= g_info["min_r"] and bin_end <= g_info["max_r"]:
+                                    ecdf_relevant_guarantee_info = g_info
+                                    break
+                            except: pass
+                        elif (filtered['sglrank'].max() - filtered['sglrank'].min()) < ((g_info["max_r"] - g_info["min_r"]) + 50):
+                             ecdf_relevant_guarantee_info = g_info
+                             break
+            
+            if ecdf_relevant_guarantee_info:
+                guarantee_value_raw = ecdf_relevant_guarantee_info["value"] # This is in £
+                
+                proportion_below_guarantee = 0.0
+                if len(ecdf_x_values) > 0:
+                    if guarantee_value_raw < ecdf_x_values[0]:
+                        proportion_below_guarantee = 0.0
+                    elif guarantee_value_raw >= ecdf_x_values[-1]:
+                        proportion_below_guarantee = 1.0
+                    else:
+                        # Find the ECDF y-value for the guarantee amount
+                        # np.searchsorted returns the index where the element would be inserted to maintain order.
+                        # 'right' means it finds the first index *greater* than the value.
+                        idx = np.searchsorted(ecdf_x_values, guarantee_value_raw, side='right')
+                        if idx > 0:
+                            # The ECDF value at the point just before this insertion point
+                            # gives the proportion of data <= x[idx-1]
+                            # Since ECDF is P(X<=x), this is the correct proportion for guarantee_value_raw
+                            proportion_below_guarantee = ecdf_y_values[idx-1] 
+                        # If idx is 0, it means guarantee_value_raw < ecdf_x_values[0], handled already.
+                
+                annotation_text_ecdf = f"{ecdf_relevant_guarantee_info['label_short']}: £{guarantee_value_raw:,.0f}<br>({proportion_below_guarantee*100:.1f}% at/below)"
+                
+                # Check if the guarantee line is within the plot's x-axis visual range for clarity
+                current_plot_ecdf_x_min = ecdf_x_values.min()
+                current_plot_ecdf_x_max = ecdf_x_values.max()
+
+                # Add a small buffer for visibility of annotation if line is at the edge
+                plot_display_ecdf_max_x = current_plot_ecdf_x_max + 0.05 * (current_plot_ecdf_x_max - current_plot_ecdf_x_min if current_plot_ecdf_x_max > current_plot_ecdf_x_min else 1)
+                plot_display_ecdf_min_x = current_plot_ecdf_x_min - 0.05 * (current_plot_ecdf_x_max - current_plot_ecdf_x_min if current_plot_ecdf_x_max > current_plot_ecdf_x_min else 1)
+
+
+                if plot_display_ecdf_min_x <= guarantee_value_raw <= plot_display_ecdf_max_x :
+                    fig_ecdf.add_vline(
+                        x=guarantee_value_raw,
+                        line_color="seagreen", 
+                        line_dash="dashdot",
+                        annotation_text=annotation_text_ecdf,
+                        annotation_position="bottom left" # Adjust for best visibility
+                    )
+            # --- End Add Relevant Guarantee Line to ECDF ---
+
             fig_ecdf.update_layout(xaxis_tickformat=',', xaxis_tickangle=90)
-            st.plotly_chart(fig_ecdf)
-            st.success(f"Median {plot_title_status} Net Prize Money: {median_val_ecdf:,.0f}")
+            st.plotly_chart(fig_ecdf, key="ecdf_earnings_plot") # Added/confirmed key
+            
+            if not pd.isna(median_val_ecdf):
+                 st.success(f"Median {plot_title_status} Net Prize Money: £{median_val_ecdf:,.0f}")
+            else:
+                 st.info("Median could not be calculated for the current selection.")
         else:
             st.info("Not enough data to generate ECDF plot.")
 
