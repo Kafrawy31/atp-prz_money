@@ -38,7 +38,7 @@ if uploaded_file is not None:
 
     # --- Dynamic Guarantee Value Inputs (in Thousands of Dollars) ---
 
-    use_adjusted_earnings = st.sidebar.checkbox("Show expected (adjusted) prize money for following year", value=False)
+    use_adjusted_earnings = st.sidebar.checkbox("Show baseline year", value=False)
     year_column = 'Baseline Year' if use_adjusted_earnings else 'Year'
     
     if year_column in df.columns and df[year_column].nunique() > 0:
