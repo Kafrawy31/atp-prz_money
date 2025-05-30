@@ -7,22 +7,83 @@ import plotly.graph_objects as go
 
 st.title("ATP Player Earnings Analysis")
 
-# --- File uploader ---
-uploaded_file = st.file_uploader("Please upload the earnings data CSV file:", type="csv")
+# --- File uploader for CSV or Excel file ---
+uploaded_file = st.file_uploader(
+    "Upload earnings data (CSV, or Excel with a sheet named 'Ranking'):",
+    type=["csv", "xlsx", "xls"]  # Accept all three types
+)
 
 if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file, parse_dates=["rankdate"])
+    df = None  # Initialize df to None
+    file_name = uploaded_file.name.lower() # Get lowercase filename for extension checking
+
+    try:
+        if file_name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file, parse_dates=["rankdate"])
+            st.success(f"Successfully loaded CSV file: {uploaded_file.name}")
+        elif file_name.endswith(('.xlsx', '.xls')):
+            try:
+                df = pd.read_excel(
+                    uploaded_file,
+                    sheet_name="Ranking",
+                    parse_dates=["rankdate"]
+                )
+                st.success(f"Successfully loaded Excel file: {uploaded_file.name} (from sheet: 'Ranking')")
+            except ValueError as e:
+                # More specific check for sheet not found errors
+                if "Worksheet named 'Ranking' not found" in str(e) or \
+                   "No sheet named <'Ranking'>" in str(e) or \
+                   "No sheet named 'Ranking'" in str(e): # Check for common pandas sheet not found messages
+                    st.error(f"Error in Excel file '{uploaded_file.name}': Could not find a sheet named 'Ranking'. Please ensure this sheet exists.")
+                    st.stop()
+                else:
+                    # Other ValueErrors during Excel parsing (e.g., corrupted file)
+                    st.error(f"Error reading Excel file '{uploaded_file.name}': {e}. The file might be corrupted or not a valid Excel format.")
+                    st.stop()
+        else:
+            # This case should ideally not be reached if `type` in file_uploader works as expected
+            st.error(f"Unsupported file type: {uploaded_file.name}. Please upload a CSV or Excel file (.xlsx, .xls).")
+            st.stop()
+
+    except pd.errors.ParserError as pe: # Catch CSV parsing errors specifically
+        st.error(f"Error parsing CSV file '{uploaded_file.name}': {pe}. Please ensure it's a valid CSV.")
+        st.stop()
+    except Exception as e:
+        # Catch any other unexpected errors during file reading or initial processing
+        st.error(f"An unexpected error occurred while processing the file '{uploaded_file.name}': {e}")
+        st.stop()
+
+    if df is None: # Final safeguard, though specific errors should have stopped execution
+        st.error("Failed to load data from the uploaded file. Please check the file and try again.")
+        st.stop()
+
+    # --- Continue with your existing data processing from here ---
+    # Ensure 'rankdate' was parsed correctly; if not, it might cause errors below
+    if 'rankdate' not in df.columns or pd.api.types.is_datetime64_any_dtype(df['rankdate']) is False:
+        # Check if 'rankdate' exists and is actually datetime
+        # Attempt to convert if it's not, or warn if it's missing critical data
+        if 'rankdate' in df.columns:
+            try:
+                df['rankdate'] = pd.to_datetime(df['rankdate'])
+                if pd.api.types.is_datetime64_any_dtype(df['rankdate']) is False: # Check again
+                    st.warning("Could not convert 'rankdate' column to datetime. Date-related features may fail.")
+            except Exception as date_conv_e:
+                st.warning(f"Failed to convert 'rankdate' to datetime automatically: {date_conv_e}. Please check the 'rankdate' column format.")
+        else:
+            st.error("Critical column 'rankdate' not found in the uploaded data. Application cannot proceed.")
+            st.stop()
+
+
     df['Year'] = df['rankdate'].dt.year
     df['Baseline Year'] = df['rankdate'].dt.year + 1
 
     sglrank_numeric = pd.to_numeric(df['sglrank'], errors='coerce')
-    sgl_rank_min_df_default, sgl_rank_max_df_default = (1, 250) # Sensible defaults
+    sgl_rank_min_df_default, sgl_rank_max_df_default = (1, 250)  # Sensible defaults
     if not sglrank_numeric.isna().all() and sglrank_numeric.max() >= 1:
         sgl_rank_min_df_default = int(sglrank_numeric.dropna().min())
         sgl_rank_max_df_default = int(sglrank_numeric.dropna().max())
     else:
         st.warning("Single ranks ('sglrank') column has issues, is empty, or contains no valid rank data. Some features might be affected. Defaulting rank filter range.")
-
     # --- Initialize Session State for Rank Filters ---
     if 'sgl_rank_min_val' not in st.session_state:
         st.session_state.sgl_rank_min_val = sgl_rank_min_df_default
@@ -153,25 +214,36 @@ if uploaded_file is not None:
         sgl_rank_range_applied = (st.session_state.sgl_rank_min_val, st.session_state.sgl_rank_max_val)
     
     # --- Other Filters ---
-    use_snumtrn_filter = st.sidebar.checkbox("Use Tournament Filter (snumtrn)")
+    use_snumtrn_filter = st.sidebar.checkbox("Use Tournament Filter (snumtrn)",value = True)
     # ... (rest of snumtrn, carprz, prize_money filters remain the same) ...
     snumtrn_range = None
     if use_snumtrn_filter and 'snumtrn' in df.columns and not df['snumtrn'].dropna().empty:
         snumtrn_min, snumtrn_max = int(df['snumtrn'].dropna().min()), int(df['snumtrn'].dropna().max())
-        snumtrn_range = st.sidebar.slider("Select number of tournaments Range", min_value=snumtrn_min, max_value=snumtrn_max, value=(snumtrn_min, snumtrn_max))
+        snumtrn_range = st.sidebar.slider(
+            "Select number of tournaments Range",
+            min_value=snumtrn_min, max_value=snumtrn_max,
+            value=(15, snumtrn_max)
+        )
+
     elif use_snumtrn_filter:
         st.sidebar.warning("'snumtrn' column not found or empty; cannot apply tournament filter.")
 
-    use_carprz_filter = st.sidebar.checkbox("Use career prize Filter (carprz)")
-    carprz_range = None
+    use_carprz_filter = st.sidebar.checkbox("Use career prize Filter (carprz)", value = True)
+    #carprz_range = None
     if use_carprz_filter and 'carprz' in df.columns and not df['carprz'].dropna().empty:
-        carprz_min_val, carprz_max_val = int(df['carprz'].dropna().min()), int(df['carprz'].dropna().max()) # Avoid conflict
+        carprz_min_val, carprz_max_val = int(df['carprz'].dropna().min()), int(df['carprz'].dropna().max())
         st.sidebar.write("Enter career prize Range ($):") 
-        carprz_min_input = st.sidebar.number_input("Min career prize ($)", value=carprz_min_val, min_value=carprz_min_val, max_value=carprz_max_val, format="%d")
-        carprz_max_input = st.sidebar.number_input("Max career prize ($)", value=carprz_max_val, min_value=carprz_min_val, max_value=carprz_max_val, format="%d")
+        carprz_min_input = st.sidebar.number_input(
+            "Min career prize ($)",
+            value=carprz_min_val, min_value=carprz_min_val, max_value=carprz_max_val, format="%d"
+        )
+        carprz_max_input = st.sidebar.number_input(
+            "Max career prize ($)",
+            value=min(carprz_max_val, 15_000_000),
+            min_value=carprz_min_val, max_value=carprz_max_val, format="%d"
+        )
         carprz_range = (carprz_min_input, carprz_max_input)
-    elif use_carprz_filter:
-        st.sidebar.warning("'carprz' column not found or empty; cannot apply career prize filter.")
+
 
     use_prize_money_filter = st.sidebar.checkbox("Use Prize Money Filter")
     prize_range = None
