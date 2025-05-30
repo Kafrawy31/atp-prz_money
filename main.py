@@ -74,7 +74,7 @@ if uploaded_file is not None:
             st.stop()
 
 
-    df['Year'] = df['rankdate'].dt.year
+    df['Year'] = df['rankdate'].dt.year + 1
     df['Baseline Year'] = df['rankdate'].dt.year + 1
 
     sglrank_numeric = pd.to_numeric(df['sglrank'], errors='coerce')
@@ -99,8 +99,8 @@ if uploaded_file is not None:
 
     # --- Dynamic Guarantee Value Inputs (in Thousands of Dollars) ---
 
-    use_adjusted_earnings = st.sidebar.checkbox("Show baseline year", value=False)
-    year_column = 'Baseline Year' if use_adjusted_earnings else 'Year'
+    use_adjusted_earnings = st.sidebar.checkbox("Use adjusted earnings (2025)", value=False)
+    year_column = 'Baseline Year'
     
     if year_column in df.columns and df[year_column].nunique() > 0:
         years = sorted(df[year_column].dropna().unique())
@@ -135,19 +135,19 @@ if uploaded_file is not None:
     }
 
     st.sidebar.subheader("Set Guarantee Levels ($k)")
-    guarantee_51_100_k = st.sidebar.number_input("Ranks 51-100 Guarantee ($k)", value=300, min_value=0, step=10, format="%d", key="g51_100k_usd")
+    guarantee_1_100_k = st.sidebar.number_input("Ranks 1-100 Guarantee ($k)", value=300, min_value=0, step=10, format="%d", key="g1_100k_usd")
     guarantee_101_175_k = st.sidebar.number_input("Ranks 101-175 Guarantee ($k)", value=200, min_value=0, step=10, format="%d", key="g101_175k_usd")
     guarantee_176_250_k = st.sidebar.number_input("Ranks 176-250 Guarantee ($k)", value=100, min_value=0, step=10, format="%d", key="g176_250k_usd")
 
-    guarantee_51_100 = guarantee_51_100_k * 1000
+    guarantee_1_100 = guarantee_1_100_k * 1000
     guarantee_101_175 = guarantee_101_175_k * 1000
     guarantee_176_250 = guarantee_176_250_k * 1000
 
     guarantee_map_dynamic = [
-        {"min_r": 1,   "max_r": 100, "value": guarantee_51_100, "label_short": "G'tee (1-100)", "label_full": f"Guarantee (Ranks 1-100: ${guarantee_51_100:,.0f})"}, # Adjusted for common preset
+        {"min_r": 1,   "max_r": 100, "value": guarantee_1_100, "label_short": "G'tee (1-100)", "label_full": f"Guarantee (Ranks 1-100: ${guarantee_1_100:,.0f})"}, # Adjusted for common preset
         {"min_r": 101, "max_r": 175, "value": guarantee_101_175, "label_short": "G'tee (101-175)", "label_full": f"Guarantee (Ranks 101-175: ${guarantee_101_175:,.0f})"},
         {"min_r": 176, "max_r": 250, "value": guarantee_176_250, "label_short": "G'tee (176-250)", "label_full": f"Guarantee (Ranks 176-250: ${guarantee_176_250:,.0f})"},
-    ] # Note: Included a 1-100 mapping assuming it might use the 51-100 guarantee. Adjust if different.
+    ] # Note: Included a 1-100 mapping assuming it might use the 1-100 guarantee. Adjust if different.
     
     def on_preset_change():
         preset_name = st.session_state.rank_preset_radio # Get the selected preset name
@@ -271,8 +271,8 @@ if uploaded_file is not None:
     count2_expected, exposure2_expected = 0, 0 
 
     if not df_baseline_2025.empty:
-        # Assuming guarantee_51_100, guarantee_101_175, guarantee_176_250 are the ones for these fixed bands
-        base_condition0_expected = (df_baseline_2025['sglrank'].between(51, 100) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_51_100))
+        # Assuming guarantee_1_100, guarantee_101_175, guarantee_176_250 are the ones for these fixed bands
+        base_condition0_expected = (df_baseline_2025['sglrank'].between(1, 100) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_1_100))
         base_condition1_expected = (df_baseline_2025['sglrank'].between(101, 175) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_101_175))
         base_condition2_expected = (df_baseline_2025['sglrank'].between(176, 250) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_176_250))
 
@@ -286,7 +286,7 @@ if uploaded_file is not None:
 
         mask0_expected = base_condition0_expected & snumtrn_filter_expected & carprz_filter_expected
         count0_expected = mask0_expected.sum()
-        if count0_expected > 0: exposure0_expected = (guarantee_51_100 - df_baseline_2025.loc[mask0_expected, 'Net Prize Money (2025 Adjusted)']).sum()
+        if count0_expected > 0: exposure0_expected = (guarantee_1_100 - df_baseline_2025.loc[mask0_expected, 'Net Prize Money (2025 Adjusted)']).sum()
 
         mask1_expected = base_condition1_expected & snumtrn_filter_expected & carprz_filter_expected
         count1_expected = mask1_expected.sum()
@@ -297,7 +297,7 @@ if uploaded_file is not None:
         if count2_expected > 0: exposure2_expected = (guarantee_176_250 - df_baseline_2025.loc[mask2_expected, 'Net Prize Money (2025 Adjusted)']).sum()
     
     c0_exp, c1_exp, c2_exp = st.columns(3)
-    c0_exp.metric(f"Ranks 51–100: # below ${guarantee_51_100:,.0f}", count0_expected, f"${exposure0_expected:,.0f} total expected exposure")
+    c0_exp.metric(f"Ranks 1–100: # below ${guarantee_1_100:,.0f}", count0_expected, f"${exposure0_expected:,.0f} total expected exposure")
     c1_exp.metric(f"Ranks 101–175: # below ${guarantee_101_175:,.0f}", count1_expected, f"${exposure1_expected:,.0f} total expected exposure")
     c2_exp.metric(f"Ranks 176–250: # below ${guarantee_176_250:,.0f}", count2_expected, f"${exposure2_expected:,.0f} total expected exposure")
     st.markdown("---")
@@ -325,7 +325,7 @@ if uploaded_file is not None:
         earnings = filtered[earnings_column].dropna().sort_values().reset_index(drop=True)
 
     # --- Main Title ---
-    title_year_prefix = "Baseline Year(s):" if use_adjusted_earnings else "Year(s):"
+    title_year_prefix = "Baseline Year(s):"
     # ... (years_display_string_main logic) ...
     years_display_string_main = "None Selected"
     if selected_years:
@@ -353,11 +353,11 @@ if uploaded_file is not None:
         if is_filter_active:
             # Priority 1: User range is fully contained within a guarantee band
             for g_info in guarantee_map:
-                # Skip the generic 1-100 if a more specific 51-100 is also possible for same value
+                # Skip the generic 1-100 if a more specific 1-100 is also possible for same value
                 if g_info["min_r"] == 1 and g_info["max_r"] == 100 and \
-                   any(g2["min_r"] == 51 and g2["max_r"] == 100 and g2["value"] == g_info["value"] for g2 in guarantee_map):
-                    if user_min_r >= 51: # only consider 1-100 if user range starts low
-                        pass # let 51-100 take precedence if user_min_r is higher
+                   any(g2["min_r"] == 1 and g2["max_r"] == 100 and g2["value"] == g_info["value"] for g2 in guarantee_map):
+                    if user_min_r >= 1: # only consider 1-100 if user range starts low
+                        pass # let 1-100 take precedence if user_min_r is higher
                     elif user_min_r >= g_info["min_r"] and user_max_r <= g_info["max_r"]:
                          return g_info # e.g. user selects 1-50, matches 1-100
                 elif user_min_r >= g_info["min_r"] and user_max_r <= g_info["max_r"]:
@@ -607,7 +607,7 @@ if uploaded_file is not None:
         actual_exposure_years_to_calc = selected_years
     else: 
         if selected_years:
-            actual_exposure_years_to_calc = [by - 1 for by in selected_years]
+            actual_exposure_years_to_calc = [by for by in selected_years]
             available_actual_rank_years_in_df = df['Year'].dropna().unique()
             actual_exposure_years_to_calc = [y for y in actual_exposure_years_to_calc if y in available_actual_rank_years_in_df]
 
@@ -615,16 +615,16 @@ if uploaded_file is not None:
     carprz_exists_globally = 'carprz' in df.columns
 
     if not actual_exposure_years_to_calc:
-        st.info("No Rank Years selected or available for Actual Exposure calculation based on current filters.")
+        st.info("No Baseline Years selected or available for Actual Exposure calculation based on current filters.")
     else:
-        st.subheader(f"Actual Exposure Analysis (for Rank Year(s): {', '.join(map(str, sorted(list(set(actual_exposure_years_to_calc)))))} using '{'Net Prize Money (Actual)'}')")
+        st.subheader(f"Actual Exposure Analysis (for Baseline Year(s): {', '.join(map(str, sorted(list(set(actual_exposure_years_to_calc)))))} using '{'Net Prize Money (Actual)'}')")
         
         if not snumtrn_exists_globally: st.warning("Column 'snumtrn' not found. For Actual Exposure, players cannot meet 'games played > 14' condition.")
         if not carprz_exists_globally: st.warning("Column 'carprz' not found. For Actual Exposure, players cannot meet 'career prize < $15M' condition.")
 
         results_actual_exposure = [] 
         for year_val in sorted(list(set(actual_exposure_years_to_calc))):
-            df_year_actual = df[df['Year'] == year_val].copy()
+            df_year_actual = df[df['Baseline Year'] == year_val].copy()
             count_actual0, exposure_actual0 = 0, 0 
             count_actual1, exposure_actual1 = 0, 0 
             count_actual2, exposure_actual2 = 0, 0 
@@ -632,7 +632,7 @@ if uploaded_file is not None:
 
             if df_year_actual.empty: comment_for_year = "No data for this year"
             else:
-                base_mask_actual0 = (df_year_actual['sglrank'].between(51, 100) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_51_100))
+                base_mask_actual0 = (df_year_actual['sglrank'].between(1, 100) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_1_100))
                 base_mask_actual1 = (df_year_actual['sglrank'].between(101, 175) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_101_175))
                 base_mask_actual2 = (df_year_actual['sglrank'].between(176, 250) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_176_250))
 
@@ -644,7 +644,7 @@ if uploaded_file is not None:
 
                 mask_actual0 = base_mask_actual0 & snumtrn_filter_actual & carprz_filter_actual
                 count_actual0 = mask_actual0.sum()
-                if count_actual0 > 0: exposure_actual0 = (guarantee_51_100 - df_year_actual.loc[mask_actual0, 'Net Prize Money (Actual)']).sum()
+                if count_actual0 > 0: exposure_actual0 = (guarantee_1_100 - df_year_actual.loc[mask_actual0, 'Net Prize Money (Actual)']).sum()
 
                 mask_actual1 = base_mask_actual1 & snumtrn_filter_actual & carprz_filter_actual
                 count_actual1 = mask_actual1.sum()
@@ -655,7 +655,7 @@ if uploaded_file is not None:
                 if count_actual2 > 0: exposure_actual2 = (guarantee_176_250 - df_year_actual.loc[mask_actual2, 'Net Prize Money (Actual)']).sum()
             
             results_actual_exposure.append({
-                "Year": year_val, "Count_51_100": count_actual0, "Exposure_51_100": exposure_actual0,
+                "Year": year_val, "Count_1_100": count_actual0, "Exposure_1_100": exposure_actual0,
                 "Count_101_175": count_actual1, "Exposure_101_175": exposure_actual1,
                 "Count_176_250": count_actual2, "Exposure_176_250": exposure_actual2, "comment": comment_for_year
             })
@@ -666,12 +666,12 @@ if uploaded_file is not None:
             plot_df_exposure = actual_exposure_df[actual_exposure_df['comment'].isna()].copy() # Renamed for clarity
 
             count_trace_names_exp = { # Renamed for clarity
-                'Count_51_100': f'Ranks 51-100 (Target < ${guarantee_51_100:,.0f})',
+                'Count_1_100': f'Ranks 1-100 (Target < ${guarantee_1_100:,.0f})',
                 'Count_101_175': f'Ranks 101-175 (Target < ${guarantee_101_175:,.0f})',
                 'Count_176_250': f'Ranks 176-250 (Target < ${guarantee_176_250:,.0f})'
             }
             amount_trace_names_exp = { # Renamed for clarity
-                'Exposure_51_100': f'Ranks 51-100 (Target < ${guarantee_51_100:,.0f})',
+                'Exposure_1_100': f'Ranks 1-100 (Target < ${guarantee_1_100:,.0f})',
                 'Exposure_101_175': f'Ranks 101-175 (Target < ${guarantee_101_175:,.0f})',
                 'Exposure_176_250': f'Ranks 176-250 (Target < ${guarantee_176_250:,.0f})'
             }
@@ -679,13 +679,13 @@ if uploaded_file is not None:
             if not plot_df_exposure.empty and plot_df_exposure['Year'].nunique() > 0 : 
                 st.markdown("---")
                 st.subheader("Trend of Actual Exposure Players by Year")
-                fig_count_trend_exp = px.line(plot_df_exposure, x='Year', y=['Count_51_100', 'Count_101_175', 'Count_176_250'], labels={'value': 'Number of Players', 'Year': 'Rank Year'}, markers=True, title="Number of Players with Actual Exposure by Rank Year")
+                fig_count_trend_exp = px.line(plot_df_exposure, x='Year', y=['Count_1_100', 'Count_101_175', 'Count_176_250'], labels={'value': 'Number of Players', 'Year': 'Base;ine Year'}, markers=True, title="Number of Players with Actual Exposure by Baseline Year")
                 fig_count_trend_exp.for_each_trace(lambda t: t.update(name=count_trace_names_exp.get(t.name, t.name)))
                 fig_count_trend_exp.update_layout(legend_title_text='Player Groups')
                 st.plotly_chart(fig_count_trend_exp)
 
                 st.subheader("Trend of Actual Exposure Amount by Year")
-                fig_amount_trend_exp = px.line(plot_df_exposure, x='Year', y=['Exposure_51_100', 'Exposure_101_175', 'Exposure_176_250'], labels={'value': 'Total Exposure Amount ($)', 'Year': 'Rank Year'}, markers=True, title="Actual Exposure Amount by Rank Year")
+                fig_amount_trend_exp = px.line(plot_df_exposure, x='Year', y=['Exposure_1_100', 'Exposure_101_175', 'Exposure_176_250'], labels={'value': 'Total Exposure Amount ($)', 'Year': 'Baseline Year'}, markers=True, title="Actual Exposure Amount by Baseline Year")
                 fig_amount_trend_exp.for_each_trace(lambda t: t.update(name=amount_trace_names_exp.get(t.name, t.name)))
                 fig_amount_trend_exp.update_layout(legend_title_text='Exposure Amounts', yaxis_tickformat='$,.0f')
                 st.plotly_chart(fig_amount_trend_exp)
@@ -694,13 +694,13 @@ if uploaded_file is not None:
             st.markdown("---")
             st.subheader("Detailed Actual Exposure by Year:")
             for _, row_data in actual_exposure_df.iterrows():
-                st.markdown(f"**Rank Year: {int(row_data['Year'])}**")
+                st.markdown(f"**Baseline Year: {int(row_data['Year'])}**")
                 if row_data["comment"]:
                     st.write(row_data["comment"])
                     st.markdown("---")
                     continue
                 col0_act, col1_act, col2_act = st.columns(3)
-                col0_act.metric(label=f"Ranks 51–100: # below ${guarantee_51_100:,.0f} (Actual)", value=int(row_data['Count_51_100']), delta=f"${row_data['Exposure_51_100']:,.0f} total actual exposure", delta_color="off")
+                col0_act.metric(label=f"Ranks 1–100: # below ${guarantee_1_100:,.0f} (Actual)", value=int(row_data['Count_1_100']), delta=f"${row_data['Exposure_1_100']:,.0f} total actual exposure", delta_color="off")
                 col1_act.metric(label=f"Ranks 101–175: # below ${guarantee_101_175:,.0f} (Actual)", value=int(row_data['Count_101_175']), delta=f"${row_data['Exposure_101_175']:,.0f} total actual exposure", delta_color="off")
                 col2_act.metric(label=f"Ranks 176–250: # below ${guarantee_176_250:,.0f} (Actual)", value=int(row_data['Count_176_250']), delta=f"${row_data['Exposure_176_250']:,.0f} total actual exposure", delta_color="off")
                 st.markdown("---")
