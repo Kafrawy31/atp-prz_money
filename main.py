@@ -113,15 +113,48 @@ if uploaded_file is not None:
     earnings_column = 'Net Prize Money (2025 Adjusted)' if use_adjusted_earnings else 'Net Prize Money (Actual)'
     
     essential_cols = ['Net Prize Money (2025 Adjusted)', 'Net Prize Money (Actual)', 'sglrank']
+    # Add 'Signed Policy' to essential_cols check if it becomes truly essential for core functionality
+    # For now, we'll warn if it's missing when the filter is used.
     missing_essential_cols = [col for col in essential_cols if col not in df.columns]
     if missing_essential_cols:
         st.error(f"Essential column(s) not found: {', '.join(missing_essential_cols)}.")
         st.stop()
     
-    exposure_condition_cols = ['snumtrn', 'carprz']
+    exposure_condition_cols = ['snumtrn', 'carprz'] # 'Signed Policy' will be checked separately
     for col in exposure_condition_cols:
         if col not in df.columns:
             st.warning(f"Column '{col}' not found. Exposure calculations might be affected.")
+
+    # --- NEW: Signed Players Filter ---
+    use_signed_players_filter = st.sidebar.checkbox("Use signed players only", value=False)
+    signed_policy_col_exists = 'Signed Policy' in df.columns
+
+    if use_signed_players_filter and not signed_policy_col_exists:
+        st.sidebar.warning("Column 'Signed Policy' not found. Cannot apply 'Use signed players only' filter.")
+        use_signed_players_filter = False # Disable filter if column is missing
+
+        # --- Signature Projection Controls ---
+    st.sidebar.markdown("### Signature Projections")
+    project_by_player = st.sidebar.checkbox("Project Signatures by Player (plyrnum)", value=False)
+    project_by_rank = st.sidebar.checkbox("Project Signatures by Rank (sglrank)", value=False)
+
+    if project_by_player and project_by_rank:
+        st.sidebar.warning("Please select only one projection method (player or rank).")
+    else:
+        if 'Signed Policy' in df.columns and 'Baseline Year' in df.columns:
+            max_year = df['Baseline Year'].max()
+            prev_year = max_year - 1
+
+            # Clear projections for latest year
+            df.loc[df['Baseline Year'] == max_year, 'Signed Policy'] = None
+
+            if project_by_player:
+                signed_players = df[(df['Baseline Year'] == prev_year) & (df['Signed Policy'] == 'P')]['plyrnum'].unique()
+                df.loc[(df['Baseline Year'] == max_year) & (df['plyrnum'].isin(signed_players)), 'Signed Policy'] = 'P'
+
+            elif project_by_rank:
+                signed_ranks = df[(df['Baseline Year'] == prev_year) & (df['Signed Policy'] == 'P')]['sglrank'].unique()
+                df.loc[(df['Baseline Year'] == max_year) & (df['sglrank'].isin(signed_ranks)), 'Signed Policy'] = 'P'
 
     # --- Rank Range Selection Logic ---
     st.sidebar.markdown("---")
@@ -139,27 +172,34 @@ if uploaded_file is not None:
     guarantee_101_175_k = st.sidebar.number_input("Ranks 101-175 Guarantee ($k)", value=200, min_value=0, step=10, format="%d", key="g101_175k_usd")
     guarantee_176_250_k = st.sidebar.number_input("Ranks 176-250 Guarantee ($k)", value=100, min_value=0, step=10, format="%d", key="g176_250k_usd")
 
-    guarantee_1_100 = guarantee_1_100_k * 1000
-    guarantee_101_175 = guarantee_101_175_k * 1000
-    guarantee_176_250 = guarantee_176_250_k * 1000
+    st.sidebar.subheader("Guarantee Multipliers")
+    multiplier_1_100 = st.sidebar.number_input("Multiplier for Ranks 1-100", min_value=0.01, value=1.0, step=0.05, format="%.2f", key="mult1_100")
+    multiplier_101_175 = st.sidebar.number_input("Multiplier for Ranks 101-175", min_value=0.01, value=1.0, step=0.05, format="%.2f", key="mult101_175")
+    multiplier_176_250 = st.sidebar.number_input("Multiplier for Ranks 176-250", min_value=0.01, value=1.0, step=0.05, format="%.2f", key="mult176_250")
+
+    base_guarantee_1_100_val = guarantee_1_100_k * 1000
+    base_guarantee_101_175_val = guarantee_101_175_k * 1000
+    base_guarantee_176_250_val = guarantee_176_250_k * 1000
+    
+    # Apply multipliers to get final guarantee values (These were not being multiplied in the previous version)
+    guarantee_1_100 = base_guarantee_1_100_val
+    guarantee_101_175 = base_guarantee_101_175_val
+    guarantee_176_250 = base_guarantee_176_250_val
 
     guarantee_map_dynamic = [
-        {"min_r": 1,   "max_r": 100, "value": guarantee_1_100, "label_short": "G'tee (1-100)", "label_full": f"Guarantee (Ranks 1-100: ${guarantee_1_100:,.0f})"}, # Adjusted for common preset
+        {"min_r": 1,   "max_r": 100, "value": guarantee_1_100, "label_short": "G'tee (1-100)", "label_full": f"Guarantee (Ranks 1-100: ${guarantee_1_100:,.0f})"},
         {"min_r": 101, "max_r": 175, "value": guarantee_101_175, "label_short": "G'tee (101-175)", "label_full": f"Guarantee (Ranks 101-175: ${guarantee_101_175:,.0f})"},
         {"min_r": 176, "max_r": 250, "value": guarantee_176_250, "label_short": "G'tee (176-250)", "label_full": f"Guarantee (Ranks 176-250: ${guarantee_176_250:,.0f})"},
-    ] # Note: Included a 1-100 mapping assuming it might use the 1-100 guarantee. Adjust if different.
+    ]
     
     def on_preset_change():
-        preset_name = st.session_state.rank_preset_radio # Get the selected preset name
+        preset_name = st.session_state.rank_preset_radio 
         if preset_name != "Custom":
             min_r, max_r = rank_presets_options[preset_name]
             st.session_state.sgl_rank_min_val = min_r
             st.session_state.sgl_rank_max_val = max_r
             st.session_state.use_rank_filter_val = True
-        # If "Custom" is selected, we don't change anything here; user uses manual controls.
     
-    # Determine the current index for the radio button based on session state
-    # This is to make the radio button reflect the actual filter state if possible
     current_filter_is_preset = "Custom"
     if st.session_state.use_rank_filter_val:
         current_tuple = (st.session_state.sgl_rank_min_val, st.session_state.sgl_rank_max_val)
@@ -171,51 +211,46 @@ if uploaded_file is not None:
     st.sidebar.radio(
         "Quick Presets:",
         options=list(rank_presets_options.keys()),
-        key='rank_preset_radio', # Key for the radio widget itself
+        key='rank_preset_radio', 
         on_change=on_preset_change,
-        index=list(rank_presets_options.keys()).index(current_filter_is_preset) # Set default index
+        index=list(rank_presets_options.keys()).index(current_filter_is_preset) 
     )
 
     st.session_state.use_rank_filter_val = st.sidebar.checkbox(
         "Filter by Rank Range (enable for presets or custom)",
-        key='use_rank_filter_val_cb', # Using the actual session state var as key
+        key='use_rank_filter_val_cb', 
         value=st.session_state.use_rank_filter_val
     )
-    use_rank_filter = st.session_state.use_rank_filter_val # Main variable to use
+    use_rank_filter = st.session_state.use_rank_filter_val 
 
-    sgl_rank_range_applied = (sgl_rank_min_df_default, sgl_rank_max_df_default) # Default applied range
+    sgl_rank_range_applied = (sgl_rank_min_df_default, sgl_rank_max_df_default) 
 
     if use_rank_filter:
         st.sidebar.write("Define Rank Range:")
-        # Update session state directly from number inputs
         new_min_rank = st.sidebar.number_input(
             "Min SGL Rank",
-            min_value=1, max_value=sgl_rank_max_df_default + 500, # Allow some flexibility
+            min_value=1, max_value=sgl_rank_max_df_default + 500, 
             value=st.session_state.sgl_rank_min_val,
-            key='sgl_rank_min_input_widget' # Distinct key for widget
+            key='sgl_rank_min_input_widget' 
         )
         new_max_rank = st.sidebar.number_input(
             "Max SGL Rank",
             min_value=1, max_value=sgl_rank_max_df_default + 500,
             value=st.session_state.sgl_rank_max_val,
-            key='sgl_rank_max_input_widget' # Distinct key for widget
+            key='sgl_rank_max_input_widget' 
         )
-        # If manual input changes, update session state and potentially set preset to "Custom"
         if new_min_rank != st.session_state.sgl_rank_min_val or new_max_rank != st.session_state.sgl_rank_max_val:
             st.session_state.sgl_rank_min_val = new_min_rank
             st.session_state.sgl_rank_max_val = new_max_rank
-            st.session_state.rank_preset_key = "Custom" # Reflect that it's now custom
-            # No st.experimental_rerun() needed, happens naturally
+            st.session_state.rank_preset_key = "Custom" 
 
         if st.session_state.sgl_rank_min_val > st.session_state.sgl_rank_max_val:
             st.session_state.sgl_rank_max_val = st.session_state.sgl_rank_min_val
-            # No warning needed here as it auto-corrects, or let Streamlit handle if min > max for number_input
         
         sgl_rank_range_applied = (st.session_state.sgl_rank_min_val, st.session_state.sgl_rank_max_val)
     
     # --- Other Filters ---
     use_snumtrn_filter = st.sidebar.checkbox("Use Tournament Filter (snumtrn)",value = True)
-    # ... (rest of snumtrn, carprz, prize_money filters remain the same) ...
     snumtrn_range = None
     if use_snumtrn_filter and 'snumtrn' in df.columns and not df['snumtrn'].dropna().empty:
         snumtrn_min, snumtrn_max = int(df['snumtrn'].dropna().min()), int(df['snumtrn'].dropna().max())
@@ -224,12 +259,11 @@ if uploaded_file is not None:
             min_value=snumtrn_min, max_value=snumtrn_max,
             value=(15, snumtrn_max)
         )
-
     elif use_snumtrn_filter:
         st.sidebar.warning("'snumtrn' column not found or empty; cannot apply tournament filter.")
 
     use_carprz_filter = st.sidebar.checkbox("Use career prize Filter (carprz)", value = True)
-    #carprz_range = None
+    carprz_range = None 
     if use_carprz_filter and 'carprz' in df.columns and not df['carprz'].dropna().empty:
         carprz_min_val, carprz_max_val = int(df['carprz'].dropna().min()), int(df['carprz'].dropna().max())
         st.sidebar.write("Enter career prize Range ($):") 
@@ -239,31 +273,33 @@ if uploaded_file is not None:
         )
         carprz_max_input = st.sidebar.number_input(
             "Max career prize ($)",
-            value=min(carprz_max_val, 15_000_000),
+            value=min(carprz_max_val, 15_000_000), 
             min_value=carprz_min_val, max_value=carprz_max_val, format="%d"
         )
         carprz_range = (carprz_min_input, carprz_max_input)
-
+    elif use_carprz_filter:
+         st.sidebar.warning("'carprz' column not found or empty; cannot apply career prize filter.")
 
     use_prize_money_filter = st.sidebar.checkbox("Use Prize Money Filter")
     prize_range = None
     if use_prize_money_filter and earnings_column in df.columns:
         if not df[earnings_column].dropna().empty:
-            prize_min_val, prize_max_val = int(df[earnings_column].dropna().min()), int(df[earnings_column].dropna().max()) # Avoid conflict
+            prize_min_val, prize_max_val = int(df[earnings_column].dropna().min()), int(df[earnings_column].dropna().max()) 
             st.sidebar.write("Enter Prize Money Range ($):") 
             prize_min_input = st.sidebar.number_input("Min Prize Money ($)", value=prize_min_val, min_value=prize_min_val, max_value=prize_max_val, format="%d")
             prize_max_input = st.sidebar.number_input("Max Prize Money ($)", value=prize_max_val, min_value=prize_min_val, max_value=prize_max_val, format="%d")
             prize_range = (prize_min_input, prize_max_input)
         else:
             st.sidebar.warning(f"No data in '{earnings_column}' for prize money filter.")
-            use_prize_money_filter = False
-    elif use_prize_money_filter:
+            use_prize_money_filter = False 
+    elif use_prize_money_filter: 
         st.sidebar.warning(f"'{earnings_column}' column not found for prize money filter.")
+        use_prize_money_filter = False 
 
 
     # --- Expected Exposure Summary (uses full guarantee values) ---
     st.subheader("Expected Exposure Summary (for Baseline Year 2025, using Adjusted Earnings)")
-    st.markdown(f"Players must have >14 tournaments played and < $15M in total career earnings. Note, guarantee thresholds are user configurable ")
+    st.markdown(f"Players must have >14 tournaments played and < $15M in total career earnings. Note, guarantee thresholds are user configurable (including multipliers). {'Only signed players included.' if use_signed_players_filter else ''}")
     df_baseline_2025 = df[df['Baseline Year'] == 2025].copy()
     
     count0_expected, exposure0_expected = 0, 0 
@@ -271,62 +307,99 @@ if uploaded_file is not None:
     count2_expected, exposure2_expected = 0, 0 
 
     if not df_baseline_2025.empty:
-        # Assuming guarantee_1_100, guarantee_101_175, guarantee_176_250 are the ones for these fixed bands
         base_condition0_expected = (df_baseline_2025['sglrank'].between(1, 100) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_1_100))
         base_condition1_expected = (df_baseline_2025['sglrank'].between(101, 175) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_101_175))
         base_condition2_expected = (df_baseline_2025['sglrank'].between(176, 250) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_176_250))
 
-        snumtrn_filter_expected = pd.Series(True, index=df_baseline_2025.index) # Default to true if col missing
+        snumtrn_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
         if 'snumtrn' in df_baseline_2025.columns:
             snumtrn_filter_expected = (df_baseline_2025['snumtrn'] > 14)
         
-        carprz_filter_expected = pd.Series(True, index=df_baseline_2025.index) # Default to true if col missing
+        carprz_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
         if 'carprz' in df_baseline_2025.columns:
             carprz_filter_expected = (df_baseline_2025['carprz'] < 15_000_000) 
 
-        mask0_expected = base_condition0_expected & snumtrn_filter_expected & carprz_filter_expected
+        signed_player_filter_expected = pd.Series(True, index=df_baseline_2025.index)
+        if use_signed_players_filter and signed_policy_col_exists:
+            signed_player_filter_expected = df_baseline_2025['Signed Policy'].astype(str).str.contains('P', na=False)
+        
+        mask0_expected = base_condition0_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
         count0_expected = mask0_expected.sum()
-        if count0_expected > 0: exposure0_expected = (guarantee_1_100 - df_baseline_2025.loc[mask0_expected, 'Net Prize Money (2025 Adjusted)']).sum()
+        if count0_expected > 0: 
+            exposure0_expected = (guarantee_1_100 - df_baseline_2025.loc[mask0_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_1_100
 
-        mask1_expected = base_condition1_expected & snumtrn_filter_expected & carprz_filter_expected
+        mask1_expected = base_condition1_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
         count1_expected = mask1_expected.sum()
-        if count1_expected > 0: exposure1_expected = (guarantee_101_175 - df_baseline_2025.loc[mask1_expected, 'Net Prize Money (2025 Adjusted)']).sum()
+        if count1_expected > 0: 
+            exposure1_expected = (guarantee_101_175 - df_baseline_2025.loc[mask1_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_101_175
 
-        mask2_expected = base_condition2_expected & snumtrn_filter_expected & carprz_filter_expected
+        mask2_expected = base_condition2_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
         count2_expected = mask2_expected.sum()
-        if count2_expected > 0: exposure2_expected = (guarantee_176_250 - df_baseline_2025.loc[mask2_expected, 'Net Prize Money (2025 Adjusted)']).sum()
+        if count2_expected > 0: 
+            exposure2_expected = (guarantee_176_250 - df_baseline_2025.loc[mask2_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_176_250
     
     c0_exp, c1_exp, c2_exp = st.columns(3)
     c0_exp.metric(f"Ranks 1–100: # below ${guarantee_1_100:,.0f}", count0_expected, f"${exposure0_expected:,.0f} total expected exposure")
     c1_exp.metric(f"Ranks 101–175: # below ${guarantee_101_175:,.0f}", count1_expected, f"${exposure1_expected:,.0f} total expected exposure")
     c2_exp.metric(f"Ranks 176–250: # below ${guarantee_176_250:,.0f}", count2_expected, f"${exposure2_expected:,.0f} total expected exposure")
+
+    # Compute total expected players and exposure
+    total_expected_count = count0_expected + count1_expected + count2_expected
+    total_expected_exposure = exposure0_expected + exposure1_expected + exposure2_expected
+
+    # Display total
+    st.markdown(
+        f"""
+        <div style="background-color: #0f0f0f; border: 1px solid #cce5ff; border-radius: 8px;
+                    padding: 10px; margin-top: 1rem;">
+            <strong>Total Expected (All Ranks):</strong><br>
+            <span style="font-size: 0.9rem;">
+                Players Below Threshold: <strong>{total_expected_count}</strong><br>
+                Total Expected Exposure: <strong>${total_expected_exposure:,.0f}</strong>
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.markdown("---")
 
     # --- Data Filtering ---
-    filtered = df.copy()
-    if year_column in df.columns and selected_years:
-        filtered = df[df[year_column].isin(selected_years)].copy()
-    # ... (other year selection messages) ...
+    # Start with a fresh copy for the main filtered section
+    filtered_display = df.copy() 
 
-    if use_rank_filter: # Applied rank range
-        if 'sglrank' in filtered.columns:
-            filtered = filtered[(filtered['sglrank'] >= sgl_rank_range_applied[0]) & (filtered['sglrank'] <= sgl_rank_range_applied[1])]
+    if year_column in df.columns and selected_years:
+        filtered_display = filtered_display[filtered_display[year_column].isin(selected_years)]
+    elif not selected_years and year_column in df.columns and df[year_column].nunique() > 0 :
+        pass 
+    elif not year_column in df.columns or (year_column in df.columns and df[year_column].nunique() == 0):
+        st.warning(f"'{year_column}' not found or has no data. Cannot filter by year for main display.")
+        # filtered_display = pd.DataFrame(columns=df.columns) 
+
+    if use_signed_players_filter and signed_policy_col_exists and not filtered_display.empty :
+         filtered_display = filtered_display[filtered_display['Signed Policy'].astype(str).str.contains('P', na=False)]
+    elif use_signed_players_filter and not signed_policy_col_exists: # Should have been caught by sidebar warning
+        st.warning("Cannot apply signed player filter to main display as 'Signed Policy' column is missing.")
+
+
+    if use_rank_filter: 
+        if 'sglrank' in filtered_display.columns:
+            filtered_display = filtered_display[(filtered_display['sglrank'] >= sgl_rank_range_applied[0]) & (filtered_display['sglrank'] <= sgl_rank_range_applied[1])]
     
-    # ... (snumtrn, carprz, prize_money filters applied to 'filtered' DataFrame) ...
-    if use_snumtrn_filter and snumtrn_range and 'snumtrn' in filtered.columns:
-        filtered = filtered[(filtered['snumtrn'] >= snumtrn_range[0]) & (filtered['snumtrn'] <= snumtrn_range[1])]
-    if use_carprz_filter and carprz_range and 'carprz' in filtered.columns:
-        filtered = filtered[(filtered['carprz'] >= carprz_range[0]) & (filtered['carprz'] <= carprz_range[1])]
-    if use_prize_money_filter and prize_range and earnings_column in filtered.columns:
-        filtered = filtered[(filtered[earnings_column] >= prize_range[0]) & (filtered[earnings_column] <= prize_range[1])]
+    if use_snumtrn_filter and snumtrn_range and 'snumtrn' in filtered_display.columns and not filtered_display.empty:
+        filtered_display = filtered_display[(filtered_display['snumtrn'] >= snumtrn_range[0]) & (filtered_display['snumtrn'] <= snumtrn_range[1])]
+    if use_carprz_filter and carprz_range and 'carprz' in filtered_display.columns and not filtered_display.empty:
+        filtered_display = filtered_display[(filtered_display['carprz'] >= carprz_range[0]) & (filtered_display['carprz'] <= carprz_range[1])]
+    if use_prize_money_filter and prize_range and earnings_column in filtered_display.columns and not filtered_display.empty:
+         if not filtered_display[earnings_column].dropna().empty : 
+            filtered_display = filtered_display[(filtered_display[earnings_column] >= prize_range[0]) & (filtered_display[earnings_column] <= prize_range[1])]
 
     earnings = pd.Series(dtype=float)
-    if earnings_column in filtered.columns and not filtered[earnings_column].dropna().empty:
-        earnings = filtered[earnings_column].dropna().sort_values().reset_index(drop=True)
+    if earnings_column in filtered_display.columns and not filtered_display[earnings_column].dropna().empty:
+        earnings = filtered_display[earnings_column].dropna().sort_values().reset_index(drop=True)
 
     # --- Main Title ---
     title_year_prefix = "Baseline Year(s):"
-    # ... (years_display_string_main logic) ...
     years_display_string_main = "None Selected"
     if selected_years:
         all_available_years_for_mode = df[year_column].dropna().unique()
@@ -343,72 +416,56 @@ if uploaded_file is not None:
     else:
         rank_display_string_main = "SGL Rank Range: All Ranks (default)"
     title_earnings_suffix = "Expected (Adjusted) Earnings" if use_adjusted_earnings else "Actual Earnings"
-    main_title_text = (f"**{title_year_prefix}** {years_display_string_main} • **{rank_display_string_main}** • **{title_earnings_suffix}**")
+    signed_filter_title_addon = " (Signed Players Only)" if use_signed_players_filter and signed_policy_col_exists else ""
+
+    main_title_text = (f"**{title_year_prefix}** {years_display_string_main} • **{rank_display_string_main}** • **{title_earnings_suffix}**{signed_filter_title_addon}")
     st.markdown(main_title_text)
 
 
     # --- Helper function for more lenient guarantee matching ---
-    def get_relevant_guarantee_info_for_display(user_min_r, user_max_r, is_filter_active, current_filtered_df, guarantee_map):
-        # If a specific rank filter is active, prioritize matching that range
+    def get_relevant_guarantee_info_for_display(user_min_r, user_max_r, is_filter_active, current_filtered_df_helper, guarantee_map): # Renamed current_filtered_df to current_filtered_df_helper
         if is_filter_active:
-            # Priority 1: User range is fully contained within a guarantee band
             for g_info in guarantee_map:
-                # Skip the generic 1-100 if a more specific 1-100 is also possible for same value
-                if g_info["min_r"] == 1 and g_info["max_r"] == 100 and \
-                   any(g2["min_r"] == 1 and g2["max_r"] == 100 and g2["value"] == g_info["value"] for g2 in guarantee_map):
-                    if user_min_r >= 1: # only consider 1-100 if user range starts low
-                        pass # let 1-100 take precedence if user_min_r is higher
-                    elif user_min_r >= g_info["min_r"] and user_max_r <= g_info["max_r"]:
-                         return g_info # e.g. user selects 1-50, matches 1-100
-                elif user_min_r >= g_info["min_r"] and user_max_r <= g_info["max_r"]:
-                    return g_info
-
-            # Priority 2: Midpoint of user range falls within a guarantee band, and there's overlap
+                if user_min_r >= g_info["min_r"] and user_max_r <= g_info["max_r"]:
+                    return g_info 
             user_mid_r = (user_min_r + user_max_r) / 2
             for g_info in guarantee_map:
                 overlap_min = max(user_min_r, g_info["min_r"])
                 overlap_max = min(user_max_r, g_info["max_r"])
-                if overlap_min <= overlap_max: # Overlap exists
+                if overlap_min <= overlap_max: 
                     if g_info["min_r"] <= user_mid_r <= g_info["max_r"]:
                         return g_info 
-            
-            # Priority 3: Largest overlap if no other match
             largest_overlap_amount = 0
             most_overlapped_g_info = None
             for g_info in guarantee_map:
                 overlap_start = max(user_min_r, g_info["min_r"])
                 overlap_end = min(user_max_r, g_info["max_r"])
                 overlap_length = overlap_end - overlap_start
-                if overlap_length > 0: # Ensure positive overlap
-                    # Prefer bands that are not excessively wider than user's range
-                    band_width_ratio = (g_info["max_r"] - g_info["min_r"] + 1) / (user_max_r - user_min_r + 1)
-                    if overlap_length > largest_overlap_amount and band_width_ratio < 5: # Heuristic
+                if overlap_length > 0: 
+                    user_range_width = user_max_r - user_min_r + 1
+                    g_band_width = g_info["max_r"] - g_info["min_r"] + 1
+                    if overlap_length > largest_overlap_amount and (overlap_length / user_range_width > 0.4 or overlap_length / g_band_width > 0.4) : 
                         largest_overlap_amount = overlap_length
                         most_overlapped_g_info = g_info
             if most_overlapped_g_info:
                 return most_overlapped_g_info
-            return None
-        
-        # Fallback: if no specific rank filter is active, use median of currently filtered data
+            return None 
         else:
-            if not current_filtered_df.empty and 'sglrank' in current_filtered_df.columns and current_filtered_df['sglrank'].nunique() > 0:
-                data_median_rank_for_plot = current_filtered_df['sglrank'].median()
+            if not current_filtered_df_helper.empty and 'sglrank' in current_filtered_df_helper.columns and current_filtered_df_helper['sglrank'].nunique() > 0:
+                data_median_rank_for_plot = current_filtered_df_helper['sglrank'].median()
                 for g_info_fallback in guarantee_map:
                     if g_info_fallback["min_r"] <= data_median_rank_for_plot <= g_info_fallback["max_r"]:
-                        data_min_rank_for_plot = current_filtered_df['sglrank'].min()
-                        data_max_rank_for_plot = current_filtered_df['sglrank'].max()
-                        # Heuristic: data span should be somewhat related to band width
-                        if (data_max_rank_for_plot - data_min_rank_for_plot) < ((g_info_fallback["max_r"] - g_info_fallback["min_r"]) + 75):
+                        data_min_rank_for_plot = current_filtered_df_helper['sglrank'].min()
+                        data_max_rank_for_plot = current_filtered_df_helper['sglrank'].max()
+                        if (data_max_rank_for_plot - data_min_rank_for_plot) < ((g_info_fallback["max_r"] - g_info_fallback["min_r"]) + 75): 
                             return g_info_fallback
             return None
 
-    if earnings.empty:
-        st.warning("No data available for the selected filter combination.")
+    if earnings.empty: # earnings is derived from filtered_display
+        st.warning("No data available for the selected filter combination (including signed player filter if active).")
     else:
-        # ... (plot_title_status, years_str_for_plot_title logic remains same) ...
         plot_title_status = "Adjusted" if use_adjusted_earnings else "Actual"
-        # ... (years_str_for_plot_title setup as before) ...
-        years_str_for_plot_title = "Selected Year(s)" # Placeholder, use your existing logic
+        years_str_for_plot_title = "Selected Year(s)" 
         if selected_years:
             all_years_in_original_df_for_current_mode = df[year_column].dropna().unique()
             if len(all_years_in_original_df_for_current_mode) > 0 and len(selected_years) == len(all_years_in_original_df_for_current_mode) :
@@ -421,29 +478,83 @@ if uploaded_file is not None:
             years_str_for_plot_title = f"No {year_column}s Data"
 
 
-        # --- Histogram (remains largely the same) ---
+        # --- Histogram ---
         st.subheader("Prize Money Distribution")
-        # ... (histogram code as before, ensuring $ sign is used) ...
         if earnings.empty:
             st.warning("No earnings data to plot for histogram.")
         else:
-            actual_min_earning = earnings.min()
-            actual_max_earning = earnings.max()
-            hist_range_x_min = 0
-            if actual_min_earning < 0: hist_range_x_min = actual_min_earning
-            hist_range_x_max = actual_max_earning
-            if actual_max_earning <= hist_range_x_min: hist_range_x_max = hist_range_x_min + (100000 if hist_range_x_min == 0 else abs(hist_range_x_min * 0.5) + 1)
-            num_bins = 30 
-            counts_hist, bin_edges_hist = np.histogram(earnings, bins=num_bins, range=(hist_range_x_min, hist_range_x_max))
-            bin_labels = [f"${bin_edges_hist[i]:,.0f} - ${bin_edges_hist[i+1]:,.0f}" for i in range(len(counts_hist))]
-            hist_plot_data = pd.DataFrame({'Bin_Range_Label': bin_labels, 'Player_Count': counts_hist, 'Bin_Lower_Edge': bin_edges_hist[:-1], 'Bin_Upper_Edge': bin_edges_hist[1:]})
-            max_count_hist = max(counts_hist) if len(counts_hist) > 0 else 0
-            padded_max_hist = max_count_hist * 1.8 if max_count_hist > 0 else 10
-            fig_hist = px.bar(hist_plot_data, x='Bin_Range_Label', y='Player_Count', text='Player_Count', custom_data=['Bin_Lower_Edge', 'Bin_Upper_Edge'])
-            fig_hist.update_traces(textposition='outside')
-            fig_hist.update_layout(title_text=f"Distribution of {plot_title_status} Prize Money for {years_str_for_plot_title}", yaxis=dict(range=[0, padded_max_hist], title_text="Number of Players"), xaxis=dict(title_text=f"{earnings_column} Bins", tickangle=-90, type='category'), bargap=0.1)
-            fig_hist.update_traces(hovertemplate=(f"<b>{earnings_column} Range:</b> $%{{customdata[0]:,.0f}} - $%{{customdata[1]:,.0f}}<br>" "<b>Number of Players:</b> %{y}<extra></extra>"))
-            st.plotly_chart(fig_hist)
+            # --- Filter earnings by guarantee threshold if rank preset selected ---
+            earnings_filtered = earnings.copy()
+
+            preset_range = rank_presets_options.get(st.session_state.rank_preset_radio)
+            if preset_range:
+                min_r, max_r = preset_range
+                guarantee_value = None
+                if max_r <= 100:
+                    guarantee_value = guarantee_1_100
+                elif max_r <= 175:
+                    guarantee_value = guarantee_101_175
+                else:
+                    guarantee_value = guarantee_176_250
+                
+                if guarantee_value is not None and 'sglrank' in filtered_display.columns:
+                    earnings_filtered = filtered_display[
+                        (filtered_display['sglrank'].between(min_r, max_r)) &
+                        (filtered_display[earnings_column] < guarantee_value)
+                    ][earnings_column].dropna().sort_values().reset_index(drop=True)
+
+            else:
+                earnings_filtered = earnings.copy()  # Default to all earnings
+
+            # If filtered earnings are empty, show message
+            if earnings_filtered.empty:
+                st.warning("No players below the guarantee threshold for the selected rank bucket.")
+            else:
+                actual_min_earning = earnings_filtered.min()
+                actual_max_earning = earnings_filtered.max()
+                hist_range_x_min = 0
+                if actual_min_earning < 0: hist_range_x_min = actual_min_earning
+                hist_range_x_max = actual_max_earning
+                if actual_max_earning <= hist_range_x_min:
+                    hist_range_x_max = hist_range_x_min + (100000 if hist_range_x_min == 0 else abs(hist_range_x_min * 0.5) + 1)
+
+                num_bins = 30
+                if hist_range_x_min < hist_range_x_max:
+                    counts_hist, bin_edges_hist = np.histogram(earnings_filtered, bins=num_bins, range=(hist_range_x_min, hist_range_x_max))
+                else:
+                    counts_hist, bin_edges_hist = np.histogram(earnings_filtered, bins=num_bins)
+
+                bin_labels = [f"${bin_edges_hist[i]:,.0f} - ${bin_edges_hist[i+1]:,.0f}" for i in range(len(counts_hist))]
+                hist_plot_data = pd.DataFrame({
+                    'Bin_Range_Label': bin_labels,
+                    'Player_Count': counts_hist,
+                    'Bin_Lower_Edge': bin_edges_hist[:-1],
+                    'Bin_Upper_Edge': bin_edges_hist[1:]
+                })
+
+                max_count_hist = max(counts_hist) if len(counts_hist) > 0 else 0
+                padded_max_hist = max_count_hist * 1.8 if max_count_hist > 0 else 10
+
+                fig_hist = px.bar(
+                    hist_plot_data,
+                    x='Bin_Range_Label',
+                    y='Player_Count',
+                    text='Player_Count',
+                    custom_data=['Bin_Lower_Edge', 'Bin_Upper_Edge']
+                )
+                fig_hist.update_traces(textposition='outside')
+                fig_hist.update_layout(
+                    title_text=f"Distribution of {plot_title_status} Prize Money for {years_str_for_plot_title}{signed_filter_title_addon}",
+                    yaxis=dict(range=[0, padded_max_hist], title_text="Number of Players"),
+                    xaxis=dict(title_text=f"{earnings_column} Bins", tickangle=-90, type='category'),
+                    bargap=0.1
+                )
+                fig_hist.update_traces(hovertemplate=(
+                    f"<b>{earnings_column} Range:</b> $%{{customdata[0]:,.0f}} - $%{{customdata[1]:,.0f}}<br>"
+                    "<b>Number of Players:</b> %{y}<extra></extra>"
+                ))
+                st.plotly_chart(fig_hist)
+
 
         # --- Density Curve (KDE) ---
         st.subheader(f"Density Curve of {plot_title_status} Net Prize Money")
@@ -457,67 +568,62 @@ if uploaded_file is not None:
             scaled_mad_m = mad_val_m * 1.4826 
             lower_bound_mad = max(median_val_m - scaled_mad_m, 0) 
             upper_bound_mad = median_val_m + scaled_mad_m
-
+            num_players_below_lower_bound = (earnings_m < lower_bound_mad).sum()
             kde = gaussian_kde(earnings_m)
             min_earnings_m, max_earnings_m = earnings_m.min(), earnings_m.max()
-            # ... (x_range_kde, y_kde calculation as before) ...
-            if min_earnings_m == max_earnings_m:
+            if min_earnings_m == max_earnings_m: 
                 x_range_kde = np.linspace(min_earnings_m - 0.1 * abs(min_earnings_m) if min_earnings_m != 0 else -0.1, 
-                                            max_earnings_m + 0.1 * abs(max_earnings_m) if max_earnings_m != 0 else 0.1, 200)
+                                          max_earnings_m + 0.1 * abs(max_earnings_m) if max_earnings_m != 0 else 0.1, 200)
             else:
                 x_range_kde = np.linspace(min_earnings_m, max_earnings_m, 200)
             y_kde = kde(x_range_kde)
-
             
             fig_kde = px.line(x=x_range_kde, y=y_kde, labels={'x': f'{earnings_column} (Millions $)', 'y': 'Density'})
-            fig_kde.update_layout(title_text=f"Density of {plot_title_status} Prize Money ({years_str_for_plot_title}, Median & Scaled MAD)", xaxis_tickformat='$,.3f', xaxis_tickangle=90) # Ensure $
-            fig_kde.add_vline(x=median_val_m, line_color="blue", line_dash="dot", annotation_text=f"${median_val_m:,.3f}m")
-            fig_kde.add_vline(x=lower_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"${lower_bound_mad:,.3f}m") 
-            fig_kde.add_vline(x=upper_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"${upper_bound_mad:,.3f}m")
+            fig_kde.update_layout(title_text=f"Density of {plot_title_status} Prize Money ({years_str_for_plot_title}{signed_filter_title_addon}, Median & Scaled MAD)", xaxis_tickformat='$,.3f', xaxis_tickangle=90) 
+            fig_kde.add_vline(x=median_val_m, line_color="blue", line_dash="dot", annotation_text=f"Median: ${median_val_m:,.3f}m")
+            fig_kde.add_vline(x=lower_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"Lower MAD Bound: ${lower_bound_mad:,.3f}m") 
+            fig_kde.add_vline(x=upper_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"Upper MAD Bound: ${upper_bound_mad:,.3f}m")
             
-            # Use the helper function to determine which guarantee line to show on the plot
             plot_display_guarantee_info = get_relevant_guarantee_info_for_display(
-                sgl_rank_range_applied[0], sgl_rank_range_applied[1], use_rank_filter, filtered, guarantee_map_dynamic
+                sgl_rank_range_applied[0], sgl_rank_range_applied[1], use_rank_filter, filtered_display, guarantee_map_dynamic # Pass filtered_display
             )
             
             if plot_display_guarantee_info:
                 guarantee_val_m = plot_display_guarantee_info["value"] / 1_000_000 
-                annotation_text_for_line = f"{plot_display_guarantee_info['label_short']}: ${guarantee_val_m:,.3f}m"
-                # ... (logic to add vline for plot_display_guarantee_info to fig_kde as before) ...
-                plot_x_min_kde, plot_x_max_kde = min_earnings_m, max_earnings_m # Use KDE specific range
-                if plot_x_min_kde == plot_x_max_kde : 
-                    plot_x_min_kde = plot_x_min_kde - 0.1 if plot_x_min_kde !=0 else -0.1
-                    plot_x_max_kde = plot_x_max_kde + 0.1 if plot_x_max_kde !=0 else 0.1
-                if (plot_x_min_kde - 0.05 * (plot_x_max_kde - plot_x_min_kde)) <= guarantee_val_m <= (plot_x_max_kde + 0.05 * (plot_x_max_kde - plot_x_min_kde)):
+                annotation_text_for_line = f"{plot_display_guarantee_info['label_short']}: ${guarantee_val_m:,.3f}m" 
+                
+                plot_x_min_kde, plot_x_max_kde = x_range_kde.min(), x_range_kde.max() 
+                if (plot_x_min_kde - 0.05 * (plot_x_max_kde - plot_x_min_kde if plot_x_max_kde > plot_x_min_kde else 1)) <= guarantee_val_m <= \
+                   (plot_x_max_kde + 0.05 * (plot_x_max_kde - plot_x_min_kde if plot_x_max_kde > plot_x_min_kde else 1)):
                     fig_kde.add_vline(x=guarantee_val_m, line_color="seagreen", line_dash="longdashdot", annotation_text=annotation_text_for_line, annotation_position="bottom right")
 
             fig_kde.update_traces(hovertemplate=f'{earnings_column} (Millions $): %{{x:.3f}}<br>Density: %{{y:.3f}}<extra></extra>')
             st.plotly_chart(fig_kde, key="kde_density_plot_exposure_stats")
 
-            # --- HTML Stat Boxes (Median, MAD, General Guarantee) ---
-            median_display_html = f"""<div style="background-color: #e0e0ff; color: #000080; border: 1px solid #b0b0e0; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Median: ${median_val_m * 1e6:,.0f}</div>"""
-            upper_mad_display_html = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Upper Bound: ${upper_bound_mad * 1e6:,.0f}</div>"""
-            lower_mad_display_html = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">Lower Bound: ${lower_bound_mad * 1e6:,.0f}</div>"""
-            
+            median_display_html = f"""<div style="background-color: #e0e0ff; color: #000080; border: 1px solid #b0b0e0; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold; font-size: 0.75em;">Median: ${median_val_m * 1e6:,.0f}</div>"""
+            upper_mad_display_html = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold; font-size: 0.75em;">Upper Bound (Scaled MAD): ${upper_bound_mad * 1e6:,.0f}</div>"""
+            lower_mad_display_html = f"""<div style="background-color: #f0e6ff; color: #4b0082; border: 1px solid #d8c0ff; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold; font-size: 0.75em;">
+                                    Lower Bound (Scaled MAD): ${lower_bound_mad * 1e6:,.0f}<br>
+                                    Players below: {num_players_below_lower_bound}
+                                    </div>"""
+
             general_guarantee_display_html = ""
             if plot_display_guarantee_info: 
                 general_guarantee_text_for_box = f"{plot_display_guarantee_info['label_full']}" 
-                general_guarantee_display_html = f"""<div style="background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">{general_guarantee_text_for_box}</div>"""
+                general_guarantee_display_html = f"""<div style="background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold; font-size: 0.75em;">Relevant Guarantee: {general_guarantee_text_for_box}</div>"""
 
-            current_display_elements = [lower_mad_display_html, median_display_html, upper_mad_display_html]
+            current_display_elements = [median_display_html, upper_mad_display_html,lower_mad_display_html]
             if general_guarantee_display_html:
                 current_display_elements.append(general_guarantee_display_html)
             
             st.markdown(f"""<div style='display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;'>{''.join(current_display_elements)}</div>""", unsafe_allow_html=True)
 
             st.info(f"Percentage of players (in current filtered data) within Median ± Scaled MAD: {(len(earnings_m[(earnings_m >= lower_bound_mad) & (earnings_m <= upper_bound_mad)]) / len(earnings_m) * 100 if len(earnings_m) > 0 else 0):.2f}%")
-            # ... (MAD note) ...
             st.markdown("""**Note on Scaled MAD:** The Median Absolute Deviation (MAD) is a robust measure of spread. It is scaled here by a factor of ~1.4826 to make it comparable to the standard deviation for data that is approximately normally distributed. The interval 'Median ± Scaled MAD' provides a robust alternative to 'Mean ± Standard Deviation'.""")
 
 
         # --- ECDF Plot ---
         st.subheader("Empirical Cumulative Distribution Function (ECDF)")
-        # ... (ECDF setup as before) ...
         ecdf_y_values = np.array([])
         ecdf_x_values = np.array([])
         median_val_ecdf = 0
@@ -528,18 +634,17 @@ if uploaded_file is not None:
 
         if use_rank_filter: rank_info_for_ecdf = f"SGL Rank Range {sgl_rank_range_applied[0]}–{sgl_rank_range_applied[1]}"
         else: rank_info_for_ecdf = "All SGL Ranks (default)"
-        ecdf_title_text = f"ECDF of {plot_title_status} Prize Money for {years_str_for_plot_title} ({rank_info_for_ecdf})"
+        ecdf_title_text = f"ECDF of {plot_title_status} Prize Money for {years_str_for_plot_title}{signed_filter_title_addon} ({rank_info_for_ecdf})"
         
         if len(ecdf_x_values) > 0 and len(ecdf_y_values) > 0:
             fig_ecdf = px.line(x=ecdf_x_values, y=ecdf_y_values, labels={'x': f'{earnings_column} ($)', 'y': 'Cumulative Proportion'}, title=ecdf_title_text)
             fig_ecdf.add_vline(x=median_val_ecdf, line_dash="dash", line_color="red", annotation_text=f"Median: ${median_val_ecdf:,.0f}")
 
             ecdf_plot_guarantee_info = get_relevant_guarantee_info_for_display(
-                sgl_rank_range_applied[0], sgl_rank_range_applied[1], use_rank_filter, filtered, guarantee_map_dynamic
+                sgl_rank_range_applied[0], sgl_rank_range_applied[1], use_rank_filter, filtered_display, guarantee_map_dynamic # Pass filtered_display
             )
             if ecdf_plot_guarantee_info:
-                guarantee_value_raw_ecdf = ecdf_plot_guarantee_info["value"]
-                # ... (proportion_below_guarantee calculation as before) ...
+                guarantee_value_raw_ecdf = ecdf_plot_guarantee_info["value"] 
                 proportion_below_guarantee = 0.0
                 if len(ecdf_x_values) > 0:
                     if guarantee_value_raw_ecdf < ecdf_x_values[0]: proportion_below_guarantee = 0.0
@@ -547,13 +652,14 @@ if uploaded_file is not None:
                     else:
                         idx = np.searchsorted(ecdf_x_values, guarantee_value_raw_ecdf, side='right')
                         if idx > 0: proportion_below_guarantee = ecdf_y_values[idx-1] 
-
                 annotation_text_ecdf = f"{ecdf_plot_guarantee_info['label_short']}: ${guarantee_value_raw_ecdf:,.0f}<br>({proportion_below_guarantee*100:.1f}% at/below)"
-                # ... (add vline for ecdf_plot_guarantee_info to fig_ecdf as before) ...
+                
                 current_plot_ecdf_x_min = ecdf_x_values.min()
                 current_plot_ecdf_x_max = ecdf_x_values.max()
-                plot_display_ecdf_max_x = current_plot_ecdf_x_max + 0.05 * (current_plot_ecdf_x_max - current_plot_ecdf_x_min if current_plot_ecdf_x_max > current_plot_ecdf_x_min else 1)
-                plot_display_ecdf_min_x = current_plot_ecdf_x_min - 0.05 * (current_plot_ecdf_x_max - current_plot_ecdf_x_min if current_plot_ecdf_x_max > current_plot_ecdf_x_min else 1)
+                plot_range_delta = current_plot_ecdf_x_max - current_plot_ecdf_x_min if current_plot_ecdf_x_max > current_plot_ecdf_x_min else 1
+                plot_display_ecdf_max_x = current_plot_ecdf_x_max + 0.05 * plot_range_delta
+                plot_display_ecdf_min_x = current_plot_ecdf_x_min - 0.05 * plot_range_delta
+                
                 if plot_display_ecdf_min_x <= guarantee_value_raw_ecdf <= plot_display_ecdf_max_x :
                     fig_ecdf.add_vline(x=guarantee_value_raw_ecdf,line_color="seagreen", line_dash="dashdot",annotation_text=annotation_text_ecdf,annotation_position="bottom left")
 
@@ -567,23 +673,31 @@ if uploaded_file is not None:
             
         # --- NEW: Exposure Stats for Selected Rank Range ---
         if use_rank_filter:
-            # The relevant guarantee for the *active filter* is plot_display_guarantee_info (since it was derived using sgl_rank_range_applied)
             active_filter_guarantee_info = plot_display_guarantee_info 
 
             if active_filter_guarantee_info:
-                target_guarantee_val_for_calc = active_filter_guarantee_info["value"]
+                target_guarantee_val_for_calc = active_filter_guarantee_info["value"] 
                 
-                # Conditions for exposure calculation on the 'filtered' DataFrame
-                snumtrn_cond_exposure = pd.Series(True, index=filtered.index)
-                if 'snumtrn' in filtered.columns: snumtrn_cond_exposure = (filtered['snumtrn'] > 14)
+                # Base conditions for this section operate on 'filtered_display'
+                snumtrn_cond_exposure = pd.Series(True, index=filtered_display.index)
+                if 'snumtrn' in filtered_display.columns: snumtrn_cond_exposure = (filtered_display['snumtrn'] > 14)
                 
-                carprz_cond_exposure = pd.Series(True, index=filtered.index)
-                if 'carprz' in filtered.columns: carprz_cond_exposure = (filtered['carprz'] < 15_000_000)
+                carprz_cond_exposure = pd.Series(True, index=filtered_display.index)
+                if 'carprz' in filtered_display.columns: carprz_cond_exposure = (filtered_display['carprz'] < 15_000_000)
 
-                earnings_cond_exposure = (filtered[earnings_column] < target_guarantee_val_for_calc)
-                final_mask_range_exposure = snumtrn_cond_exposure & carprz_cond_exposure & earnings_cond_exposure
+                earnings_cond_exposure = (filtered_display[earnings_column] < target_guarantee_val_for_calc)
                 
-                players_in_range_df = filtered[final_mask_range_exposure] # Already filtered by rank range
+                # The signed player filter is already applied to filtered_display if active
+                # So, no need to re-apply it here explicitly for mask creation if filtered_display is used
+                
+                if not filtered_display.empty:
+                    # Rank filter is already applied to filtered_display if use_rank_filter is True
+                    # So players_in_range_df will inherently respect the rank filter and Signed Policy filter
+                    final_mask_range_exposure = snumtrn_cond_exposure & carprz_cond_exposure & earnings_cond_exposure
+                    players_in_range_df = filtered_display[final_mask_range_exposure] 
+                else: 
+                    players_in_range_df = pd.DataFrame(columns=filtered_display.columns) 
+                
                 num_players_in_range_exposed = len(players_in_range_df)
                 
                 total_exposure_val_in_range = 0
@@ -593,44 +707,48 @@ if uploaded_file is not None:
                 exp_num_html = f"""<div style="background-color: #ffe0b3; color: #804000; border: 1px solid #ffcc80; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">For Ranks {sgl_rank_range_applied[0]}-{sgl_rank_range_applied[1]} (vs G'tee ${target_guarantee_val_for_calc:,.0f}):<br># Players Exposed: {num_players_in_range_exposed}</div>"""
                 exp_total_html = f"""<div style="background-color: #ffe0b3; color: #804000; border: 1px solid #ffcc80; border-radius: 0.25rem; padding: 0.5rem 1rem; font-weight: bold;">For Ranks {sgl_rank_range_applied[0]}-{sgl_rank_range_applied[1]} (vs G'tee ${target_guarantee_val_for_calc:,.0f}):<br>Total Exposure: ${total_exposure_val_in_range:,.0f}</div>"""
                 st.markdown(f"""<div style='display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; margin-bottom: 1rem;'>{exp_num_html}{exp_total_html}</div>""", unsafe_allow_html=True)
-            elif use_rank_filter: # use_rank_filter is true, but no specific guarantee band matched the custom range well enough
-                    st.markdown(f"""<div style='margin-top: 0.5rem; margin-bottom: 1rem; font-style: italic;'>No specific ATP guarantee band strongly aligns with the selected rank range {sgl_rank_range_applied[0]}-{sgl_rank_range_applied[1]} for detailed exposure stats display here.</div>""", unsafe_allow_html=True)
+            elif use_rank_filter: 
+                st.markdown(f"""<div style='margin-top: 0.5rem; margin-bottom: 1rem; font-style: italic;'>No specific ATP guarantee band strongly aligns with the selected rank range {sgl_rank_range_applied[0]}-{sgl_rank_range_applied[1]} for detailed exposure stats display here.</div>""", unsafe_allow_html=True)
 
 
-    # --- Exposure Comparison Section (remains largely the same) ---
+    # --- Exposure Comparison Section ---
     st.markdown("---")
     st.header("Exposure Comparison") 
-    st.markdown("---")
+    st.markdown(f"---{'Only signed players included in this section if filter is active.' if use_signed_players_filter else ''}")
     
     actual_exposure_years_to_calc = [] 
     if not use_adjusted_earnings: 
         actual_exposure_years_to_calc = selected_years
     else: 
         if selected_years:
-            actual_exposure_years_to_calc = [by for by in selected_years]
-            available_actual_rank_years_in_df = df['Year'].dropna().unique()
+            actual_exposure_years_to_calc = [by for by in selected_years] 
+            available_actual_rank_years_in_df = df['Year'].dropna().unique() 
             actual_exposure_years_to_calc = [y for y in actual_exposure_years_to_calc if y in available_actual_rank_years_in_df]
 
     snumtrn_exists_globally = 'snumtrn' in df.columns
     carprz_exists_globally = 'carprz' in df.columns
+    # Signed Policy_col_exists is already defined
 
     if not actual_exposure_years_to_calc:
-        st.info("No Baseline Years selected or available for Actual Exposure calculation based on current filters.")
+        st.info("No Baseline Years selected or available for Actual Exposure calculation based on current filters (ensure 'Year' column matches selected 'Baseline Year' if 'Use adjusted earnings' is on).")
     else:
-        st.subheader(f"Actual Exposure Analysis (for Baseline Year(s): {', '.join(map(str, sorted(list(set(actual_exposure_years_to_calc)))))} using '{'Net Prize Money (Actual)'}')")
+        st.subheader(f"Actual Exposure Analysis (for Year(s): {', '.join(map(str, sorted(list(set(actual_exposure_years_to_calc)))))} using '{'Net Prize Money (Actual)'}')")
         
         if not snumtrn_exists_globally: st.warning("Column 'snumtrn' not found. For Actual Exposure, players cannot meet 'games played > 14' condition.")
         if not carprz_exists_globally: st.warning("Column 'carprz' not found. For Actual Exposure, players cannot meet 'career prize < $15M' condition.")
+        if use_signed_players_filter and not signed_policy_col_exists:
+             st.warning("Column 'Signed Policy' not found. 'Use signed players only' filter cannot be applied to Actual Exposure.")
+
 
         results_actual_exposure = [] 
         for year_val in sorted(list(set(actual_exposure_years_to_calc))):
-            df_year_actual = df[df['Baseline Year'] == year_val].copy()
+            df_year_actual = df[df['Year'] == year_val].copy() 
             count_actual0, exposure_actual0 = 0, 0 
             count_actual1, exposure_actual1 = 0, 0 
             count_actual2, exposure_actual2 = 0, 0 
             comment_for_year = None
 
-            if df_year_actual.empty: comment_for_year = "No data for this year"
+            if df_year_actual.empty: comment_for_year = f"No actual data for year {year_val}"
             else:
                 base_mask_actual0 = (df_year_actual['sglrank'].between(1, 100) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_1_100))
                 base_mask_actual1 = (df_year_actual['sglrank'].between(101, 175) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_101_175))
@@ -642,17 +760,26 @@ if uploaded_file is not None:
                 carprz_filter_actual = pd.Series(True, index=df_year_actual.index)
                 if carprz_exists_globally and 'carprz' in df_year_actual.columns: carprz_filter_actual = (df_year_actual['carprz'] < 15_000_000)
 
-                mask_actual0 = base_mask_actual0 & snumtrn_filter_actual & carprz_filter_actual
+                signed_player_filter_actual = pd.Series(True, index=df_year_actual.index)
+                if use_signed_players_filter and signed_policy_col_exists:
+                     signed_player_filter_actual = df_year_actual['Signed Policy'].astype(str).str.contains('P', na=False)
+
+
+                mask_actual0 = base_mask_actual0 & snumtrn_filter_actual & carprz_filter_actual & signed_player_filter_actual
                 count_actual0 = mask_actual0.sum()
-                if count_actual0 > 0: exposure_actual0 = (guarantee_1_100 - df_year_actual.loc[mask_actual0, 'Net Prize Money (Actual)']).sum()
+                if count_actual0 > 0: 
+                    exposure_actual0 = (guarantee_1_100 - df_year_actual.loc[mask_actual0, 'Net Prize Money (Actual)']).sum()
+                    # Multiplier is already in guarantee_1_100
 
-                mask_actual1 = base_mask_actual1 & snumtrn_filter_actual & carprz_filter_actual
+                mask_actual1 = base_mask_actual1 & snumtrn_filter_actual & carprz_filter_actual & signed_player_filter_actual
                 count_actual1 = mask_actual1.sum()
-                if count_actual1 > 0: exposure_actual1 = (guarantee_101_175 - df_year_actual.loc[mask_actual1, 'Net Prize Money (Actual)']).sum()
+                if count_actual1 > 0: 
+                    exposure_actual1 = (guarantee_101_175 - df_year_actual.loc[mask_actual1, 'Net Prize Money (Actual)']).sum()
 
-                mask_actual2 = base_mask_actual2 & snumtrn_filter_actual & carprz_filter_actual
+                mask_actual2 = base_mask_actual2 & snumtrn_filter_actual & carprz_filter_actual & signed_player_filter_actual
                 count_actual2 = mask_actual2.sum()
-                if count_actual2 > 0: exposure_actual2 = (guarantee_176_250 - df_year_actual.loc[mask_actual2, 'Net Prize Money (Actual)']).sum()
+                if count_actual2 > 0: 
+                    exposure_actual2 = (guarantee_176_250 - df_year_actual.loc[mask_actual2, 'Net Prize Money (Actual)']).sum()
             
             results_actual_exposure.append({
                 "Year": year_val, "Count_1_100": count_actual0, "Exposure_1_100": exposure_actual0,
@@ -663,14 +790,14 @@ if uploaded_file is not None:
         if results_actual_exposure:
             actual_exposure_df = pd.DataFrame(results_actual_exposure)
             actual_exposure_df = actual_exposure_df.sort_values(by='Year')
-            plot_df_exposure = actual_exposure_df[actual_exposure_df['comment'].isna()].copy() # Renamed for clarity
+            plot_df_exposure = actual_exposure_df[actual_exposure_df['comment'].isna()].copy() 
 
-            count_trace_names_exp = { # Renamed for clarity
+            count_trace_names_exp = { 
                 'Count_1_100': f'Ranks 1-100 (Target < ${guarantee_1_100:,.0f})',
                 'Count_101_175': f'Ranks 101-175 (Target < ${guarantee_101_175:,.0f})',
                 'Count_176_250': f'Ranks 176-250 (Target < ${guarantee_176_250:,.0f})'
             }
-            amount_trace_names_exp = { # Renamed for clarity
+            amount_trace_names_exp = { 
                 'Exposure_1_100': f'Ranks 1-100 (Target < ${guarantee_1_100:,.0f})',
                 'Exposure_101_175': f'Ranks 101-175 (Target < ${guarantee_101_175:,.0f})',
                 'Exposure_176_250': f'Ranks 176-250 (Target < ${guarantee_176_250:,.0f})'
@@ -678,23 +805,23 @@ if uploaded_file is not None:
 
             if not plot_df_exposure.empty and plot_df_exposure['Year'].nunique() > 0 : 
                 st.markdown("---")
-                st.subheader("Trend of Actual Exposure Players by Year")
-                fig_count_trend_exp = px.line(plot_df_exposure, x='Year', y=['Count_1_100', 'Count_101_175', 'Count_176_250'], labels={'value': 'Number of Players', 'Year': 'Base;ine Year'}, markers=True, title="Number of Players with Actual Exposure by Baseline Year")
+                st.subheader(f"Trend of Actual Exposure Players by Year{signed_filter_title_addon}")
+                fig_count_trend_exp = px.line(plot_df_exposure, x='Year', y=['Count_1_100', 'Count_101_175', 'Count_176_250'], labels={'value': 'Number of Players', 'Year': 'Year'}, markers=True, title=f"Number of Players with Actual Exposure by Year{signed_filter_title_addon}")
                 fig_count_trend_exp.for_each_trace(lambda t: t.update(name=count_trace_names_exp.get(t.name, t.name)))
                 fig_count_trend_exp.update_layout(legend_title_text='Player Groups')
                 st.plotly_chart(fig_count_trend_exp)
 
-                st.subheader("Trend of Actual Exposure Amount by Year")
-                fig_amount_trend_exp = px.line(plot_df_exposure, x='Year', y=['Exposure_1_100', 'Exposure_101_175', 'Exposure_176_250'], labels={'value': 'Total Exposure Amount ($)', 'Year': 'Baseline Year'}, markers=True, title="Actual Exposure Amount by Baseline Year")
+                st.subheader(f"Trend of Actual Exposure Amount by Year{signed_filter_title_addon}")
+                fig_amount_trend_exp = px.line(plot_df_exposure, x='Year', y=['Exposure_1_100', 'Exposure_101_175', 'Exposure_176_250'], labels={'value': 'Total Exposure Amount ($)', 'Year': 'Year'}, markers=True, title=f"Actual Exposure Amount by Year{signed_filter_title_addon}")
                 fig_amount_trend_exp.for_each_trace(lambda t: t.update(name=amount_trace_names_exp.get(t.name, t.name)))
                 fig_amount_trend_exp.update_layout(legend_title_text='Exposure Amounts', yaxis_tickformat='$,.0f')
                 st.plotly_chart(fig_amount_trend_exp)
-            elif not actual_exposure_df.empty : st.info("Not enough yearly data points to plot trends for actual exposure.")
+            elif not actual_exposure_df.empty : st.info("Not enough yearly data points to plot trends for actual exposure (requires at least one year with valid data).")
 
             st.markdown("---")
-            st.subheader("Detailed Actual Exposure by Year:")
+            st.subheader(f"Detailed Actual Exposure by Year{signed_filter_title_addon}:")
             for _, row_data in actual_exposure_df.iterrows():
-                st.markdown(f"**Baseline Year: {int(row_data['Year'])}**")
+                st.markdown(f"**Year: {int(row_data['Year'])}**") 
                 if row_data["comment"]:
                     st.write(row_data["comment"])
                     st.markdown("---")
@@ -703,6 +830,25 @@ if uploaded_file is not None:
                 col0_act.metric(label=f"Ranks 1–100: # below ${guarantee_1_100:,.0f} (Actual)", value=int(row_data['Count_1_100']), delta=f"${row_data['Exposure_1_100']:,.0f} total actual exposure", delta_color="off")
                 col1_act.metric(label=f"Ranks 101–175: # below ${guarantee_101_175:,.0f} (Actual)", value=int(row_data['Count_101_175']), delta=f"${row_data['Exposure_101_175']:,.0f} total actual exposure", delta_color="off")
                 col2_act.metric(label=f"Ranks 176–250: # below ${guarantee_176_250:,.0f} (Actual)", value=int(row_data['Count_176_250']), delta=f"${row_data['Exposure_176_250']:,.0f} total actual exposure", delta_color="off")
+                # Compute totals
+                total_players = int(row_data['Count_1_100'] + row_data['Count_101_175'] + row_data['Count_176_250'])
+                total_exposure = row_data['Exposure_1_100'] + row_data['Exposure_101_175'] + row_data['Exposure_176_250']
+
+                # Show totals in a separate column
+                col_total = st.columns(1)[0]
+                col_total.markdown(
+                    f"""
+                    <div style="background-color: #0f0f0f; border: 1px solid #ccc; border-radius: 8px;
+                                padding: 10px; margin-top: 0.5rem;">
+                        <strong>Total (All Ranks):</strong><br>
+                        <span style="font-size: 0.9rem;">
+                            Players Below Threshold: <strong>{total_players}</strong><br>
+                            Total Exposure: <strong>${total_exposure:,.0f}</strong>
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True
+                )
+
                 st.markdown("---")
         else: st.info("No data processed for Actual Exposure calculation.")
 else:
