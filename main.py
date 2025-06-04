@@ -94,7 +94,8 @@ if uploaded_file is not None:
     if 'rank_preset_key' not in st.session_state: # For the radio button's own state
         st.session_state.rank_preset_key = "Custom"
 
-
+    if 'Signed Policy' in df.columns:
+        df['Signed Policy_Original'] = df['Signed Policy']
     st.sidebar.title("Filters")
 
     # --- Dynamic Guarantee Value Inputs (in Thousands of Dollars) ---
@@ -120,7 +121,7 @@ if uploaded_file is not None:
         st.error(f"Essential column(s) not found: {', '.join(missing_essential_cols)}.")
         st.stop()
     
-    exposure_condition_cols = ['snumtrn', 'carprz'] # 'Signed Policy' will be checked separately
+    exposure_condition_cols = ['Events Played', 'carprz'] # 'Signed Policy' will be checked separately
     for col in exposure_condition_cols:
         if col not in df.columns:
             st.warning(f"Column '{col}' not found. Exposure calculations might be affected.")
@@ -145,17 +146,21 @@ if uploaded_file is not None:
             max_year = df['Baseline Year'].max()
             prev_year = max_year - 1
 
-            # Clear projections for latest year
-            df.loc[df['Baseline Year'] == max_year, 'Signed Policy'] = None
+            if project_by_player or project_by_rank:
+                # Wipe 2025 signed policy clean
+                df.loc[df['Baseline Year'] == max_year, 'Signed Policy'] = None
 
-            if project_by_player:
-                signed_players = df[(df['Baseline Year'] == prev_year) & (df['Signed Policy'] == 'P')]['plyrnum'].unique()
-                df.loc[(df['Baseline Year'] == max_year) & (df['plyrnum'].isin(signed_players)), 'Signed Policy'] = 'P'
+                if project_by_player:
+                    signed_players = df[(df['Baseline Year'] == prev_year) & (df['Signed Policy'] == 'P')]['plyrnum'].unique()
+                    df.loc[(df['Baseline Year'] == max_year) & (df['plyrnum'].isin(signed_players)), 'Signed Policy'] = 'P'
 
-            elif project_by_rank:
-                signed_ranks = df[(df['Baseline Year'] == prev_year) & (df['Signed Policy'] == 'P')]['sglrank'].unique()
-                df.loc[(df['Baseline Year'] == max_year) & (df['sglrank'].isin(signed_ranks)), 'Signed Policy'] = 'P'
+                elif project_by_rank:
+                    signed_ranks = df[(df['Baseline Year'] == prev_year) & (df['Signed Policy'] == 'P')]['sglrank'].unique()
+                    df.loc[(df['Baseline Year'] == max_year) & (df['sglrank'].isin(signed_ranks)), 'Signed Policy'] = 'P'
 
+            else:
+                # If no projection is selected, restore original 'P' values
+                df.loc[df['Baseline Year'] == max_year, 'Signed Policy'] = df.loc[df['Baseline Year'] == max_year, 'Signed Policy_Original']
     # --- Rank Range Selection Logic ---
     st.sidebar.markdown("---")
     st.sidebar.markdown("#### Rank Range Selection")
@@ -250,17 +255,17 @@ if uploaded_file is not None:
         sgl_rank_range_applied = (st.session_state.sgl_rank_min_val, st.session_state.sgl_rank_max_val)
     
     # --- Other Filters ---
-    use_snumtrn_filter = st.sidebar.checkbox("Use Tournament Filter (snumtrn)",value = True)
+    use_snumtrn_filter = st.sidebar.checkbox("Use Tournament Filter (Events Played)",value = True)
     snumtrn_range = None
-    if use_snumtrn_filter and 'snumtrn' in df.columns and not df['snumtrn'].dropna().empty:
-        snumtrn_min, snumtrn_max = int(df['snumtrn'].dropna().min()), int(df['snumtrn'].dropna().max())
+    if use_snumtrn_filter and 'Events Played' in df.columns and not df['Events Played'].dropna().empty:
+        snumtrn_min, snumtrn_max = int(df['Events Played'].dropna().min()), int(df['Events Played'].dropna().max())
         snumtrn_range = st.sidebar.slider(
             "Select number of tournaments Range",
             min_value=snumtrn_min, max_value=snumtrn_max,
             value=(15, snumtrn_max)
         )
     elif use_snumtrn_filter:
-        st.sidebar.warning("'snumtrn' column not found or empty; cannot apply tournament filter.")
+        st.sidebar.warning("'Events Played' column not found or empty; cannot apply tournament filter.")
 
     use_carprz_filter = st.sidebar.checkbox("Use career prize Filter (carprz)", value = True)
     carprz_range = None 
@@ -312,8 +317,10 @@ if uploaded_file is not None:
         base_condition2_expected = (df_baseline_2025['sglrank'].between(176, 250) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_176_250))
 
         snumtrn_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
-        if 'snumtrn' in df_baseline_2025.columns:
-            snumtrn_filter_expected = (df_baseline_2025['snumtrn'] > 14)
+        if snumtrn_range and 'Events Played' in df_baseline_2025.columns:
+            df_baseline_2025 = df_baseline_2025[
+                df_baseline_2025['Events Played'].between(snumtrn_range[0], snumtrn_range[1])
+            ]
         
         carprz_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
         if 'carprz' in df_baseline_2025.columns:
@@ -386,8 +393,8 @@ if uploaded_file is not None:
         if 'sglrank' in filtered_display.columns:
             filtered_display = filtered_display[(filtered_display['sglrank'] >= sgl_rank_range_applied[0]) & (filtered_display['sglrank'] <= sgl_rank_range_applied[1])]
     
-    if use_snumtrn_filter and snumtrn_range and 'snumtrn' in filtered_display.columns and not filtered_display.empty:
-        filtered_display = filtered_display[(filtered_display['snumtrn'] >= snumtrn_range[0]) & (filtered_display['snumtrn'] <= snumtrn_range[1])]
+    if use_snumtrn_filter and snumtrn_range and 'Events Played' in filtered_display.columns and not filtered_display.empty:
+        filtered_display = filtered_display[(filtered_display['Events Played'] >= snumtrn_range[0]) & (filtered_display['Events Played'] <= snumtrn_range[1])]
     if use_carprz_filter and carprz_range and 'carprz' in filtered_display.columns and not filtered_display.empty:
         filtered_display = filtered_display[(filtered_display['carprz'] >= carprz_range[0]) & (filtered_display['carprz'] <= carprz_range[1])]
     if use_prize_money_filter and prize_range and earnings_column in filtered_display.columns and not filtered_display.empty:
@@ -680,7 +687,7 @@ if uploaded_file is not None:
                 
                 # Base conditions for this section operate on 'filtered_display'
                 snumtrn_cond_exposure = pd.Series(True, index=filtered_display.index)
-                if 'snumtrn' in filtered_display.columns: snumtrn_cond_exposure = (filtered_display['snumtrn'] > 14)
+                if 'Events Played' in filtered_display.columns: snumtrn_cond_exposure = (filtered_display['Events Played'] > 14)
                 
                 carprz_cond_exposure = pd.Series(True, index=filtered_display.index)
                 if 'carprz' in filtered_display.columns: carprz_cond_exposure = (filtered_display['carprz'] < 15_000_000)
@@ -713,143 +720,142 @@ if uploaded_file is not None:
 
     # --- Exposure Comparison Section ---
     st.markdown("---")
-    st.header("Exposure Comparison") 
+    exposure_type_label = "Adjusted" if use_adjusted_earnings else "Actual"
+    st.header(f"{exposure_type_label} Exposure Comparison")
     st.markdown(f"---{'Only signed players included in this section if filter is active.' if use_signed_players_filter else ''}")
-    
-    actual_exposure_years_to_calc = [] 
-    if not use_adjusted_earnings: 
-        actual_exposure_years_to_calc = selected_years
-    else: 
-        if selected_years:
-            actual_exposure_years_to_calc = [by for by in selected_years] 
-            available_actual_rank_years_in_df = df['Year'].dropna().unique() 
-            actual_exposure_years_to_calc = [y for y in actual_exposure_years_to_calc if y in available_actual_rank_years_in_df]
 
-    snumtrn_exists_globally = 'snumtrn' in df.columns
+    # Determine which earnings column to use
+    earnings_col_actual_section = 'Net Prize Money (2025 Adjusted)' if use_adjusted_earnings else 'Net Prize Money (Actual)'
+
+    actual_exposure_years_to_calc = []
+    if not use_adjusted_earnings:
+        actual_exposure_years_to_calc = selected_years
+    else:
+        if selected_years:
+            available_actual_rank_years_in_df = df['Year'].dropna().unique()
+            actual_exposure_years_to_calc = [y for y in selected_years if y in available_actual_rank_years_in_df]
+
+    snumtrn_exists_globally = 'Events Played' in df.columns
     carprz_exists_globally = 'carprz' in df.columns
-    # Signed Policy_col_exists is already defined
 
     if not actual_exposure_years_to_calc:
-        st.info("No Baseline Years selected or available for Actual Exposure calculation based on current filters (ensure 'Year' column matches selected 'Baseline Year' if 'Use adjusted earnings' is on).")
+        st.info("No Baseline Years selected or available for Exposure calculation based on current filters.")
     else:
-        st.subheader(f"Actual Exposure Analysis (for Year(s): {', '.join(map(str, sorted(list(set(actual_exposure_years_to_calc)))))} using '{'Net Prize Money (Actual)'}')")
-        
-        if not snumtrn_exists_globally: st.warning("Column 'snumtrn' not found. For Actual Exposure, players cannot meet 'games played > 14' condition.")
-        if not carprz_exists_globally: st.warning("Column 'carprz' not found. For Actual Exposure, players cannot meet 'career prize < $15M' condition.")
+        st.subheader(f"Exposure Analysis (for Year(s): {', '.join(map(str, sorted(set(actual_exposure_years_to_calc))))} using '{earnings_col_actual_section}')")
+
+        if not snumtrn_exists_globally:
+            st.warning("Column 'Events Played' not found. Cannot apply events filter.")
+        if not carprz_exists_globally:
+            st.warning("Column 'carprz' not found. Cannot apply career prize filter.")
         if use_signed_players_filter and not signed_policy_col_exists:
-             st.warning("Column 'Signed Policy' not found. 'Use signed players only' filter cannot be applied to Actual Exposure.")
+            st.warning("Column 'Signed Policy' not found. Cannot apply signed player filter.")
 
+        results_exposure = []
+        for year_val in sorted(set(actual_exposure_years_to_calc)):
+            df_year = df[df['Year'] == year_val].copy()
+            count0, exposure0 = 0, 0
+            count1, exposure1 = 0, 0
+            count2, exposure2 = 0, 0
+            comment = None
 
-        results_actual_exposure = [] 
-        for year_val in sorted(list(set(actual_exposure_years_to_calc))):
-            df_year_actual = df[df['Year'] == year_val].copy() 
-            count_actual0, exposure_actual0 = 0, 0 
-            count_actual1, exposure_actual1 = 0, 0 
-            count_actual2, exposure_actual2 = 0, 0 
-            comment_for_year = None
-
-            if df_year_actual.empty: comment_for_year = f"No actual data for year {year_val}"
+            if df_year.empty:
+                comment = f"No data for year {year_val}"
             else:
-                base_mask_actual0 = (df_year_actual['sglrank'].between(1, 100) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_1_100))
-                base_mask_actual1 = (df_year_actual['sglrank'].between(101, 175) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_101_175))
-                base_mask_actual2 = (df_year_actual['sglrank'].between(176, 250) & (df_year_actual['Net Prize Money (Actual)'] < guarantee_176_250))
+                base_mask0 = df_year['sglrank'].between(1, 100) & (df_year[earnings_col_actual_section] < guarantee_1_100)
+                base_mask1 = df_year['sglrank'].between(101, 175) & (df_year[earnings_col_actual_section] < guarantee_101_175)
+                base_mask2 = df_year['sglrank'].between(176, 250) & (df_year[earnings_col_actual_section] < guarantee_176_250)
 
-                snumtrn_filter_actual = pd.Series(True, index=df_year_actual.index)
-                if snumtrn_exists_globally and 'snumtrn' in df_year_actual.columns: snumtrn_filter_actual = (df_year_actual['snumtrn'] > 14)
-                
-                carprz_filter_actual = pd.Series(True, index=df_year_actual.index)
-                if carprz_exists_globally and 'carprz' in df_year_actual.columns: carprz_filter_actual = (df_year_actual['carprz'] < 15_000_000)
+                snumtrn_filter = pd.Series(True, index=df_year.index)
+                if snumtrn_exists_globally and 'Events Played' in df_year.columns:
+                    snumtrn_filter = df_year['Events Played'] > 14
 
-                signed_player_filter_actual = pd.Series(True, index=df_year_actual.index)
+                carprz_filter = pd.Series(True, index=df_year.index)
+                if carprz_exists_globally and 'carprz' in df_year.columns:
+                    carprz_filter = df_year['carprz'] < 15_000_000
+
+                signed_filter = pd.Series(True, index=df_year.index)
                 if use_signed_players_filter and signed_policy_col_exists:
-                     signed_player_filter_actual = df_year_actual['Signed Policy'].astype(str).str.contains('P', na=False)
+                    signed_filter = df_year['Signed Policy'].astype(str).str.contains('P', na=False)
 
+                mask0 = base_mask0 & snumtrn_filter & carprz_filter & signed_filter
+                mask1 = base_mask1 & snumtrn_filter & carprz_filter & signed_filter
+                mask2 = base_mask2 & snumtrn_filter & carprz_filter & signed_filter
 
-                mask_actual0 = base_mask_actual0 & snumtrn_filter_actual & carprz_filter_actual & signed_player_filter_actual
-                count_actual0 = mask_actual0.sum()
-                if count_actual0 > 0: 
-                    exposure_actual0 = (guarantee_1_100 - df_year_actual.loc[mask_actual0, 'Net Prize Money (Actual)']).sum()
-                    # Multiplier is already in guarantee_1_100
+                count0 = mask0.sum()
+                count1 = mask1.sum()
+                count2 = mask2.sum()
 
-                mask_actual1 = base_mask_actual1 & snumtrn_filter_actual & carprz_filter_actual & signed_player_filter_actual
-                count_actual1 = mask_actual1.sum()
-                if count_actual1 > 0: 
-                    exposure_actual1 = (guarantee_101_175 - df_year_actual.loc[mask_actual1, 'Net Prize Money (Actual)']).sum()
+                if count0 > 0:
+                    exposure0 = (guarantee_1_100 - df_year.loc[mask0, earnings_col_actual_section]).sum()
+                if count1 > 0:
+                    exposure1 = (guarantee_101_175 - df_year.loc[mask1, earnings_col_actual_section]).sum()
+                if count2 > 0:
+                    exposure2 = (guarantee_176_250 - df_year.loc[mask2, earnings_col_actual_section]).sum()
 
-                mask_actual2 = base_mask_actual2 & snumtrn_filter_actual & carprz_filter_actual & signed_player_filter_actual
-                count_actual2 = mask_actual2.sum()
-                if count_actual2 > 0: 
-                    exposure_actual2 = (guarantee_176_250 - df_year_actual.loc[mask_actual2, 'Net Prize Money (Actual)']).sum()
-            
-            results_actual_exposure.append({
-                "Year": year_val, "Count_1_100": count_actual0, "Exposure_1_100": exposure_actual0,
-                "Count_101_175": count_actual1, "Exposure_101_175": exposure_actual1,
-                "Count_176_250": count_actual2, "Exposure_176_250": exposure_actual2, "comment": comment_for_year
+            results_exposure.append({
+                "Year": year_val,
+                "Count_1_100": count0, "Exposure_1_100": exposure0,
+                "Count_101_175": count1, "Exposure_101_175": exposure1,
+                "Count_176_250": count2, "Exposure_176_250": exposure2,
+                "comment": comment
             })
 
-        if results_actual_exposure:
-            actual_exposure_df = pd.DataFrame(results_actual_exposure)
-            actual_exposure_df = actual_exposure_df.sort_values(by='Year')
-            plot_df_exposure = actual_exposure_df[actual_exposure_df['comment'].isna()].copy() 
+        if results_exposure:
+            exposure_df = pd.DataFrame(results_exposure).sort_values(by='Year')
+            valid_plot_df = exposure_df[exposure_df['comment'].isna()].copy()
 
-            count_trace_names_exp = { 
-                'Count_1_100': f'Ranks 1-100 (Target < ${guarantee_1_100:,.0f})',
-                'Count_101_175': f'Ranks 101-175 (Target < ${guarantee_101_175:,.0f})',
-                'Count_176_250': f'Ranks 176-250 (Target < ${guarantee_176_250:,.0f})'
-            }
-            amount_trace_names_exp = { 
-                'Exposure_1_100': f'Ranks 1-100 (Target < ${guarantee_1_100:,.0f})',
-                'Exposure_101_175': f'Ranks 101-175 (Target < ${guarantee_101_175:,.0f})',
-                'Exposure_176_250': f'Ranks 176-250 (Target < ${guarantee_176_250:,.0f})'
-            }
+            if not valid_plot_df.empty:
+                st.subheader(f"Trend of Exposure Players by Year ({exposure_type_label})")
+                fig_counts = px.line(
+                    valid_plot_df, x='Year',
+                    y=['Count_1_100', 'Count_101_175', 'Count_176_250'],
+                    labels={'value': 'Number of Players', 'Year': 'Year'},
+                    markers=True,
+                    title=f"Number of Players Below Threshold by Year ({exposure_type_label})"
+                )
+                fig_counts.update_layout(legend_title_text='Player Groups')
+                st.plotly_chart(fig_counts)
 
-            if not plot_df_exposure.empty and plot_df_exposure['Year'].nunique() > 0 : 
-                st.markdown("---")
-                st.subheader(f"Trend of Actual Exposure Players by Year{signed_filter_title_addon}")
-                fig_count_trend_exp = px.line(plot_df_exposure, x='Year', y=['Count_1_100', 'Count_101_175', 'Count_176_250'], labels={'value': 'Number of Players', 'Year': 'Year'}, markers=True, title=f"Number of Players with Actual Exposure by Year{signed_filter_title_addon}")
-                fig_count_trend_exp.for_each_trace(lambda t: t.update(name=count_trace_names_exp.get(t.name, t.name)))
-                fig_count_trend_exp.update_layout(legend_title_text='Player Groups')
-                st.plotly_chart(fig_count_trend_exp)
+                st.subheader(f"Trend of Exposure Amount by Year ({exposure_type_label})")
+                fig_amounts = px.line(
+                    valid_plot_df, x='Year',
+                    y=['Exposure_1_100', 'Exposure_101_175', 'Exposure_176_250'],
+                    labels={'value': 'Total Exposure ($)', 'Year': 'Year'},
+                    markers=True,
+                    title=f"Total Exposure Amount by Year ({exposure_type_label})"
+                )
+                fig_amounts.update_layout(legend_title_text='Exposure Groups', yaxis_tickformat='$,.0f')
+                st.plotly_chart(fig_amounts)
 
-                st.subheader(f"Trend of Actual Exposure Amount by Year{signed_filter_title_addon}")
-                fig_amount_trend_exp = px.line(plot_df_exposure, x='Year', y=['Exposure_1_100', 'Exposure_101_175', 'Exposure_176_250'], labels={'value': 'Total Exposure Amount ($)', 'Year': 'Year'}, markers=True, title=f"Actual Exposure Amount by Year{signed_filter_title_addon}")
-                fig_amount_trend_exp.for_each_trace(lambda t: t.update(name=amount_trace_names_exp.get(t.name, t.name)))
-                fig_amount_trend_exp.update_layout(legend_title_text='Exposure Amounts', yaxis_tickformat='$,.0f')
-                st.plotly_chart(fig_amount_trend_exp)
-            elif not actual_exposure_df.empty : st.info("Not enough yearly data points to plot trends for actual exposure (requires at least one year with valid data).")
-
-            st.markdown("---")
-            st.subheader(f"Detailed Actual Exposure by Year{signed_filter_title_addon}:")
-            for _, row_data in actual_exposure_df.iterrows():
-                st.markdown(f"**Year: {int(row_data['Year'])}**") 
-                if row_data["comment"]:
-                    st.write(row_data["comment"])
+            st.subheader("Detailed Exposure Summary:")
+            for _, row in exposure_df.iterrows():
+                st.markdown(f"**Year: {int(row['Year'])}**")
+                if row["comment"]:
+                    st.write(row["comment"])
                     st.markdown("---")
                     continue
-                col0_act, col1_act, col2_act = st.columns(3)
-                col0_act.metric(label=f"Ranks 1–100: # below ${guarantee_1_100:,.0f} (Actual)", value=int(row_data['Count_1_100']), delta=f"${row_data['Exposure_1_100']:,.0f} total actual exposure", delta_color="off")
-                col1_act.metric(label=f"Ranks 101–175: # below ${guarantee_101_175:,.0f} (Actual)", value=int(row_data['Count_101_175']), delta=f"${row_data['Exposure_101_175']:,.0f} total actual exposure", delta_color="off")
-                col2_act.metric(label=f"Ranks 176–250: # below ${guarantee_176_250:,.0f} (Actual)", value=int(row_data['Count_176_250']), delta=f"${row_data['Exposure_176_250']:,.0f} total actual exposure", delta_color="off")
-                # Compute totals
-                total_players = int(row_data['Count_1_100'] + row_data['Count_101_175'] + row_data['Count_176_250'])
-                total_exposure = row_data['Exposure_1_100'] + row_data['Exposure_101_175'] + row_data['Exposure_176_250']
 
-                # Show totals in a separate column
-                col_total = st.columns(1)[0]
-                col_total.markdown(
+                col0, col1, col2 = st.columns(3)
+                col0.metric(f"Ranks 1–100", int(row["Count_1_100"]), f"${row['Exposure_1_100']:,.0f}")
+                col1.metric(f"Ranks 101–175", int(row["Count_101_175"]), f"${row['Exposure_101_175']:,.0f}")
+                col2.metric(f"Ranks 176–250", int(row["Count_176_250"]), f"${row['Exposure_176_250']:,.0f}")
+
+                total_players = int(row["Count_1_100"] + row["Count_101_175"] + row["Count_176_250"])
+                total_exposure = row["Exposure_1_100"] + row["Exposure_101_175"] + row["Exposure_176_250"]
+
+                st.markdown(
                     f"""
-                    <div style="background-color: #0f0f0f; border: 1px solid #ccc; border-radius: 8px;
-                                padding: 10px; margin-top: 0.5rem;">
-                        <strong>Total (All Ranks):</strong><br>
-                        <span style="font-size: 0.9rem;">
-                            Players Below Threshold: <strong>{total_players}</strong><br>
-                            Total Exposure: <strong>${total_exposure:,.0f}</strong>
-                        </span>
+                    <div style="background-color: #0f0f0f; border: 1px solid #ccc; border-radius: 6px;
+                                padding: 10px; margin-top: 10px;">
+                        <strong>Total:</strong><br>
+                        Players Below Threshold: <strong>{total_players}</strong><br>
+                        Total Exposure: <strong>${total_exposure:,.0f}</strong>
                     </div>
                     """, unsafe_allow_html=True
                 )
-
                 st.markdown("---")
-        else: st.info("No data processed for Actual Exposure calculation.")
+        else:
+            st.info("No data processed for exposure analysis.")
+
 else:
     st.warning("Please upload the earnings data CSV file to proceed.")
