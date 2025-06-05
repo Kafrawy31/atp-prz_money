@@ -370,6 +370,48 @@ if uploaded_file is not None:
     )
 
     st.markdown("---")
+    if use_signed_players_filter:
+        # --- Count signed players in 2025 (filtered only by Baseline Year and Signed Policy) ---
+        signed_2025_df = df[(df['Baseline Year'] == 2025) & df['Signed Policy'].astype(str).str.contains('P', na=False)].copy()
+
+        signed_count_1_100 = signed_2025_df[signed_2025_df['sglrank'].between(1, 100)].shape[0]
+        signed_count_101_175 = signed_2025_df[signed_2025_df['sglrank'].between(101, 175)].shape[0]
+        signed_count_176_250 = signed_2025_df[signed_2025_df['sglrank'].between(176, 250)].shape[0]
+        total_signed = signed_count_1_100 + signed_count_101_175 + signed_count_176_250
+
+        # Display signed player counts
+        c0_signed, c1_signed, c2_signed = st.columns(3)
+        c0_signed.metric("Signed Players (1–100)", signed_count_1_100)
+        c1_signed.metric("Signed Players (101–175)", signed_count_101_175)
+        c2_signed.metric("Signed Players (176–250)", signed_count_176_250)
+
+        st.markdown(
+            f"""
+            <div style="background-color: #0f0f0f; border: 1px solid #ffffff; border-radius: 8px;
+                        padding: 10px; margin-top: 0.5rem;">
+                <strong>Total Signed Players (2025):</strong>
+                <span style="font-size: 0.9rem;"><strong>{total_signed}</strong></span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # --- % of signed players (relative to total in each band, filtered only by Baseline Year) ---
+        df_all_2025 = df[df['Baseline Year'] == 2025]
+
+        total_1_100 = df_all_2025[df_all_2025['sglrank'].between(1, 100)].shape[0]
+        total_101_175 = df_all_2025[df_all_2025['sglrank'].between(101, 175)].shape[0]
+        total_176_250 = df_all_2025[df_all_2025['sglrank'].between(176, 250)].shape[0]
+
+        pct_1_100 = (signed_count_1_100 / total_1_100 * 100) if total_1_100 else 0
+        pct_101_175 = (signed_count_101_175 / total_101_175 * 100) if total_101_175 else 0
+        pct_176_250 = (signed_count_176_250 / total_176_250 * 100) if total_176_250 else 0
+
+        st.markdown("### % of Signed Players by Ranking Band (2025)")
+        c0_pct, c1_pct, c2_pct = st.columns(3)
+        c0_pct.metric("Ranks 1–100", f"{pct_1_100:.1f}%", f"{signed_count_1_100}/{total_1_100} signed")
+        c1_pct.metric("Ranks 101–175", f"{pct_101_175:.1f}%", f"{signed_count_101_175}/{total_101_175} signed")
+        c2_pct.metric("Ranks 176–250", f"{pct_176_250:.1f}%", f"{signed_count_176_250}/{total_176_250} signed")
 
     # --- Data Filtering ---
     # Start with a fresh copy for the main filtered section
@@ -587,9 +629,9 @@ if uploaded_file is not None:
             
             fig_kde = px.line(x=x_range_kde, y=y_kde, labels={'x': f'{earnings_column} (Millions $)', 'y': 'Density'})
             fig_kde.update_layout(title_text=f"Density of {plot_title_status} Prize Money ({years_str_for_plot_title}{signed_filter_title_addon}, Median & Scaled MAD)", xaxis_tickformat='$,.3f', xaxis_tickangle=90) 
-            fig_kde.add_vline(x=median_val_m, line_color="blue", line_dash="dot", annotation_text=f"Median: ${median_val_m:,.3f}m")
-            fig_kde.add_vline(x=lower_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"Lower MAD Bound: ${lower_bound_mad:,.3f}m") 
-            fig_kde.add_vline(x=upper_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"Upper MAD Bound: ${upper_bound_mad:,.3f}m")
+            fig_kde.add_vline(x=median_val_m, line_color="blue", line_dash="dot", annotation_text=f"${median_val_m:,.3f}m")
+            fig_kde.add_vline(x=lower_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"${lower_bound_mad:,.3f}m") 
+            fig_kde.add_vline(x=upper_bound_mad, line_color="purple", line_dash="dash", annotation_text=f"${upper_bound_mad:,.3f}m")
             
             plot_display_guarantee_info = get_relevant_guarantee_info_for_display(
                 sgl_rank_range_applied[0], sgl_rank_range_applied[1], use_rank_filter, filtered_display, guarantee_map_dynamic # Pass filtered_display
