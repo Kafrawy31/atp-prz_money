@@ -447,6 +447,83 @@ if uploaded_file is not None:
     if earnings_column in filtered_display.columns and not filtered_display[earnings_column].dropna().empty:
         earnings = filtered_display[earnings_column].dropna().sort_values().reset_index(drop=True)
 
+    # --- Initialize session state if not present ---
+    if 'exposure_snapshots' not in st.session_state:
+        st.session_state.exposure_snapshots = []
+
+    # --- Snapshot Creation ---
+    if st.button("📸 Save Snapshot"):
+        snapshot = {
+            "1–100 Threshold": f"${guarantee_1_100:,.0f} (x{multiplier_1_100})",
+            "101–175 Threshold": f"${guarantee_101_175:,.0f} (x{multiplier_101_175})",
+            "176–250 Threshold": f"${guarantee_176_250:,.0f} (x{multiplier_176_250})",
+            "Ranks 1–100": f"{count0_expected} players below threshold — ${exposure0_expected:,.0f} expected exposure",
+            "Ranks 101–175": f"{count1_expected} players below threshold — ${exposure1_expected:,.0f} expected exposure",
+            "Ranks 176–250": f"{count2_expected} players below threshold — ${exposure2_expected:,.0f} expected exposure",
+            "Total": f"{total_expected_count} total players — ${total_expected_exposure:,.0f} total expected exposure",
+            "Signed Filter Used": use_signed_players_filter
+        }
+        st.session_state.exposure_snapshots.append(snapshot)
+        st.success("Snapshot saved!")
+
+    # --- Ultra-Compact Horizontal Snapshot Display ---
+    if st.session_state.exposure_snapshots:
+        st.markdown("## 📂 Saved Snapshots")
+
+        col_clear, _ = st.columns([1, 4])
+        with col_clear:
+            if st.button("🗑️ Clear All"):
+                st.session_state.exposure_snapshots = []
+                st.rerun()
+
+        for i, snap in enumerate(st.session_state.exposure_snapshots):
+            total_info = snap.get('Total', 'N/A')
+
+            if ' — ' in total_info:
+                total_players, total_exposure = total_info.split(' — ')
+
+                signed_filter_text = (
+                    "<em>Signed Players Only:</em> "
+                    f"<strong>{'Yes' if snap.get('Signed Filter Used') else 'No'}</strong>"
+                )
+
+                header_text = f"""Snapshot {i + 1}<br>
+    {total_players.replace(' total players', ' Total Players Exposed')}<br>
+    {total_exposure.replace(' total expected exposure', ' Total Exposure')}<br>
+    {signed_filter_text}"""
+            else:
+                header_text = f"Snapshot {i + 1}"
+
+            # Snapshot card
+            st.markdown(f"""
+            <div style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 8px 0; background-color: #0f0f0f; font-size: 0.9em;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <strong style="font-size: 1.1em; color: #ffffff;">📊 {header_text}</strong>
+                </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; font-size: 0.9em;">
+                        <div style="text-align: center; padding: 8px; background-color: #0f0f0f; border-radius: 4px; border-left: 4px solid #f39c12;">
+                            <strong style="color: #f39c12;"> 1–100 </strong><br>
+                            <span style="font-size: 0.8em;"><em>Threshold:</em> {snap.get('1–100 Threshold', 'N/A')}</span><br>
+                            <span style="font-size: 0.85em;">{snap.get('Ranks 1–100', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
+                        </div>
+                        <div style="text-align: center; padding: 8px; background-color: #0f0f0f; border-radius: 4px; border-left: 4px solid #3498db;">
+                            <strong style="color: #3498db;"> 101–175 </strong><br>
+                            <span style="font-size: 0.8em;"><em>Threshold:</em> {snap.get('101–175 Threshold', 'N/A')}</span><br>
+                            <span style="font-size: 0.85em;">{snap.get('Ranks 101–175', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
+                        </div>
+                        <div style="text-align: center; padding: 8px; background-color: #0f0f0f; border-radius: 4px; border-left: 4px solid #27ae60;">
+                            <strong style="color: #27ae60;"> 176–250 </strong><br>
+                            <span style="font-size: 0.8em;"><em>Threshold:</em> {snap.get('176–250 Threshold', 'N/A')}</span><br>
+                            <span style="font-size: 0.85em;">{snap.get('Ranks 176–250', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
+                        </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Delete button
+            if st.button(f"🗑️ Delete Snapshot {i + 1}", key=f"delete_snapshot_{i}", help="Delete this snapshot"):
+                st.session_state.exposure_snapshots.pop(i)
+                st.rerun()
+
     # --- Main Title ---
     title_year_prefix = "Baseline Year(s):"
     years_display_string_main = "None Selected"
