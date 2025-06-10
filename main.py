@@ -139,15 +139,36 @@ if uploaded_file is not None:
     project_by_player = st.sidebar.checkbox("Project Signatures by Player (plyrnum)", value=False)
     project_by_rank = st.sidebar.checkbox("Project Signatures by Rank (sglrank)", value=False)
 
+    # NEW: Reverse projection checkbox
+    st.sidebar.markdown("### Reverse Signature Projection")
+    reverse_projection = st.sidebar.checkbox("Project Max Year Signatures onto Previous Year", value=False)
+
     if project_by_player and project_by_rank:
         st.sidebar.warning("Please select only one projection method (player or rank).")
+
+    elif reverse_projection:
+        if 'Signed Policy' in df.columns and 'Baseline Year' in df.columns:
+            max_year = df['Baseline Year'].max()
+            prev_year = max_year - 1
+
+            # Clear previous year's signed policy
+            df.loc[df['Baseline Year'] == prev_year, 'Signed Policy'] = None
+
+            if project_by_player:
+                signed_players = df[(df['Baseline Year'] == max_year) & (df['Signed Policy'] == 'P')]['plyrnum'].unique()
+                df.loc[(df['Baseline Year'] == prev_year) & (df['plyrnum'].isin(signed_players)), 'Signed Policy'] = 'P'
+
+            elif project_by_rank:
+                signed_ranks = df[(df['Baseline Year'] == max_year) & (df['Signed Policy'] == 'P')]['sglrank'].unique()
+                df.loc[(df['Baseline Year'] == prev_year) & (df['sglrank'].isin(signed_ranks)), 'Signed Policy'] = 'P'
+
     else:
         if 'Signed Policy' in df.columns and 'Baseline Year' in df.columns:
             max_year = df['Baseline Year'].max()
             prev_year = max_year - 1
 
             if project_by_player or project_by_rank:
-                # Wipe 2025 signed policy clean
+                # Clear max year's signed policy
                 df.loc[df['Baseline Year'] == max_year, 'Signed Policy'] = None
 
                 if project_by_player:
@@ -157,10 +178,10 @@ if uploaded_file is not None:
                 elif project_by_rank:
                     signed_ranks = df[(df['Baseline Year'] == prev_year) & (df['Signed Policy'] == 'P')]['sglrank'].unique()
                     df.loc[(df['Baseline Year'] == max_year) & (df['sglrank'].isin(signed_ranks)), 'Signed Policy'] = 'P'
-
             else:
-                # If no projection is selected, restore original 'P' values
+                # Restore original values if no projection selected
                 df.loc[df['Baseline Year'] == max_year, 'Signed Policy'] = df.loc[df['Baseline Year'] == max_year, 'Signed Policy_Original']
+
     # --- Rank Range Selection Logic ---
     st.sidebar.markdown("---")
     st.sidebar.markdown("#### Rank Range Selection")
@@ -307,6 +328,36 @@ if uploaded_file is not None:
     st.markdown(f"Players must have >14 tournaments played and < $15M in total career earnings. Note, guarantee thresholds are user configurable (including multipliers). {'Only signed players included.' if use_signed_players_filter else ''}")
     df_baseline_2025 = df[df['Baseline Year'] == 2025].copy()
     
+    st.markdown("## Newcomer investment and Income protection")
+
+    with st.expander("💼 Income Protection"):
+        income_protection_players = st.slider(
+            "Number of Income Protection Players", min_value=0, max_value=10, value=3
+        )
+        income_protection_amount = st.slider(
+            "Exposure per Income Protection Player ($)", min_value=0, max_value=50000, value=20000, step=500
+        )
+        income_protection_exposure = income_protection_players * income_protection_amount
+
+        st.markdown(
+            f"**Total Income Protection Exposure:** `${income_protection_exposure:,.0f}`"
+        )
+
+    with st.expander("🌱 Newcomer Investment"):
+        newcomer_players = st.slider(
+            "Number of Newcomer Players", min_value=0, max_value=30, value=5
+        )
+        newcomer_amount = st.slider(
+            "Exposure per Newcomer Player ($)", min_value=0, max_value=200000, value=20000, step=1000
+        )
+        newcomer_exposure = newcomer_players * newcomer_amount
+
+        st.markdown(
+            
+            f"**Total Newcomer Investment Exposure:** `${newcomer_exposure:,.0f}`"
+        )
+
+    st.markdown("## Guarantee")
     count0_expected, exposure0_expected = 0, 0 
     count1_expected, exposure1_expected = 0, 0 
     count2_expected, exposure2_expected = 0, 0 
@@ -353,23 +404,38 @@ if uploaded_file is not None:
     # Compute total expected players and exposure
     total_expected_count = count0_expected + count1_expected + count2_expected
     total_expected_exposure = exposure0_expected + exposure1_expected + exposure2_expected
+    total_expected_exposure_with_protection_and_investment = exposure0_expected + exposure1_expected + exposure2_expected + newcomer_exposure + income_protection_exposure
 
     # Display total
     st.markdown(
         f"""
-        <div style="background-color: #0f0f0f; border: 1px solid #cce5ff; border-radius: 8px;
-                    padding: 10px; margin-top: 1rem;">
-            <strong>Total Expected (All Ranks):</strong><br>
-            <span style="font-size: 0.9rem;">
-                Players Below Threshold: <strong>{total_expected_count}</strong><br>
-                Total Expected Exposure: <strong>${total_expected_exposure:,.0f}</strong>
-            </span>
+        <div style="background-color: #0f0f0f; border: 1px solid #cce5ff; border-radius: 8px; display:flex; flex-direction:column;
+                    padding: 10px;">
+            <p style="font-size:1.4em;"><strong>Total Expected (All Ranks): ${total_expected_exposure_with_protection_and_investment:,.0f}</strong></p><br>
+            <div style="font-size: 0.9rem; display:flex; flex-direction:row; flex:1; justify-content:space-between; margin-bottom:15px; margin-top:0px; padding:0px;">
+                <div>
+                    <p style="font-size:1.3em; font-weight:bold; padding:0px;">Baseline</p>
+                    Players Below Threshold: <strong>{total_expected_count}</strong><br>
+                    Baseline Exposure: <strong>${total_expected_exposure:,.0f}</strong><br>
+                </div>
+                <div>
+                <p style="font-size:1.3em; font-weight:bold;">Newcomer investment</p>
+                    Newcomer Count: <strong>{newcomer_players:,.0f}</strong><br>
+                    Newcomer Investment: <strong>${newcomer_exposure:,.0f}</strong><br>
+                </div>
+                <div>
+                <p style="font-size:1.3em; font-weight:bold;">Incomer protection</p>
+                    Income Protection count: <strong>{income_protection_players:,.0f}</strong><br>
+                    Incone Protection exposure: <strong>${income_protection_exposure:,.0f}</strong><br>
+                </div>    
+            </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
     st.markdown("---")
+    st.markdown("## Total signatures")
     if use_signed_players_filter:
         # --- Count signed players in 2025 (filtered only by Baseline Year and Signed Policy) ---
         signed_2025_df = df[(df['Baseline Year'] == 2025) & df['Signed Policy'].astype(str).str.contains('P', na=False)].copy()
@@ -407,6 +473,7 @@ if uploaded_file is not None:
         pct_101_175 = (signed_count_101_175 / total_101_175 * 100) if total_101_175 else 0
         pct_176_250 = (signed_count_176_250 / total_176_250 * 100) if total_176_250 else 0
 
+        st.markdown("---")
         st.markdown("### % of Signed Players by Ranking Band (2025)")
         c0_pct, c1_pct, c2_pct = st.columns(3)
         c0_pct.metric("Ranks 1–100", f"{pct_1_100:.1f}%", f"{signed_count_1_100}/{total_1_100} signed")
@@ -447,12 +514,18 @@ if uploaded_file is not None:
     if earnings_column in filtered_display.columns and not filtered_display[earnings_column].dropna().empty:
         earnings = filtered_display[earnings_column].dropna().sort_values().reset_index(drop=True)
 
-    # --- Initialize session state if not present ---
+    
+        # --- Initialize session state if not present ---
+    
     if 'exposure_snapshots' not in st.session_state:
         st.session_state.exposure_snapshots = []
-
+    st.divider()
     # --- Snapshot Creation ---
     if st.button("📸 Save Snapshot"):
+        # Calculate the new Guarantee Total
+        guarantee_total_players = count0_expected + count1_expected + count2_expected
+        guarantee_total_exposure = exposure0_expected + exposure1_expected + exposure2_expected
+
         snapshot = {
             "1–100 Threshold": f"${guarantee_1_100:,.0f} (x{multiplier_1_100})",
             "101–175 Threshold": f"${guarantee_101_175:,.0f} (x{multiplier_101_175})",
@@ -460,7 +533,14 @@ if uploaded_file is not None:
             "Ranks 1–100": f"{count0_expected} players below threshold — ${exposure0_expected:,.0f} expected exposure",
             "Ranks 101–175": f"{count1_expected} players below threshold — ${exposure1_expected:,.0f} expected exposure",
             "Ranks 176–250": f"{count2_expected} players below threshold — ${exposure2_expected:,.0f} expected exposure",
-            "Total": f"{total_expected_count} total players — ${total_expected_exposure:,.0f} total expected exposure",
+            "Guarantee Total": f"{guarantee_total_players} players — ${guarantee_total_exposure:,.0f} exposure",
+            "Income Protection Adjustment": f"{income_protection_players} players — ${income_protection_exposure:,.0f}",
+            "Newcomer Investment Adjustment": f"{newcomer_players} players — ${newcomer_exposure:,.0f}",
+            "Income Protection Players": income_protection_players,
+            "Income Protection Amount": income_protection_amount,
+            "Newcomer Players": newcomer_players,
+            "Newcomer Amount": newcomer_amount,
+            "Total": f"{total_expected_count} total players — ${total_expected_exposure_with_protection_and_investment:,.0f} total expected exposure",
             "Signed Filter Used": use_signed_players_filter
         }
         st.session_state.exposure_snapshots.append(snapshot)
@@ -483,42 +563,57 @@ if uploaded_file is not None:
                 total_players, total_exposure = total_info.split(' — ')
 
                 signed_filter_text = (
-                    "<em>Signed Players Only:</em> "
+                    "<strong>Signed Players Only:</strong> "
                     f"<strong>{'Yes' if snap.get('Signed Filter Used') else 'No'}</strong>"
                 )
 
+                # Simplified header focusing only on the grand total
                 header_text = f"""Snapshot {i + 1}<br>
-    {total_players.replace(' total players', ' Total Players Exposed')}<br>
-    {total_exposure.replace(' total expected exposure', ' Total Exposure')}<br>
-    {signed_filter_text}"""
-            else:
-                header_text = f"Snapshot {i + 1}"
+                {signed_filter_text}"""
 
-            # Snapshot card
-            st.markdown(f"""
-            <div style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 8px 0; background-color: #0f0f0f; font-size: 0.9em;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <strong style="font-size: 1.1em; color: #ffffff;">📊 {header_text}</strong>
-                </div>
+                # Details for the new section below the cards
+                guarantee_total_info = snap.get('Guarantee Total', '0 players — $0 exposure')
+                guarantee_players, guarantee_exposure = guarantee_total_info.split(' — ')
+
+                income_protection_line = f"<strong>Income Protection:</strong> {snap.get('Income Protection Players', 0)} players × ${snap.get('Income Protection Amount', 0):,} = ${snap.get('Income Protection Players', 0) * snap.get('Income Protection Amount', 0):,}"
+                newcomer_investment_line = f"<strong>Newcomer Investment:</strong> {snap.get('Newcomer Players', 0)} players × ${snap.get('Newcomer Amount', 0):,} = ${snap.get('Newcomer Players', 0) * snap.get('Newcomer Amount', 0):,}"
+                guarantee_total_line = f"<strong>Guarantee Total:</strong> {guarantee_players} totalling ${float(guarantee_exposure.replace('$', '').replace(',', '').replace(' exposure', '')):,.0f}"
+
+
+                # Snapshot card
+                st.markdown(f"""
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 8px 0; background-color: #0f0f0f; font-size: 0.9em;">
+                    <!-- HEADER: Contains snapshot number and grand total -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <strong style="font-size: 1.1em; color: #ffffff;">📊 {header_text}</strong>
+                    </div>
+                    <!-- RANK CARDS: Grid display for rank brackets -->
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; font-size: 0.9em;">
-                        <div style="text-align: center; padding: 8px; background-color: #0f0f0f; border-radius: 4px; border-left: 4px solid #f39c12;">
+                        <div style="text-align: center; padding: 8px; background-color: #1a1a1a; border-radius: 4px; border-left: 4px solid #f39c12;">
                             <strong style="color: #f39c12;"> 1–100 </strong><br>
-                            <span style="font-size: 0.8em;"><em>Threshold:</em> {snap.get('1–100 Threshold', 'N/A')}</span><br>
-                            <span style="font-size: 0.85em;">{snap.get('Ranks 1–100', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
+                            <span style="font-size: 1.2em;"><strong>Threshold:</strong> {snap.get('1–100 Threshold', 'N/A')}</span><br>
+                            <span style="font-size: 1.1em;">{snap.get('Ranks 1–100', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
                         </div>
-                        <div style="text-align: center; padding: 8px; background-color: #0f0f0f; border-radius: 4px; border-left: 4px solid #3498db;">
+                        <div style="text-align: center; padding: 8px; background-color: #1a1a1a; border-radius: 4px; border-left: 4px solid #3498db;">
                             <strong style="color: #3498db;"> 101–175 </strong><br>
-                            <span style="font-size: 0.8em;"><em>Threshold:</em> {snap.get('101–175 Threshold', 'N/A')}</span><br>
-                            <span style="font-size: 0.85em;">{snap.get('Ranks 101–175', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
+                            <span style="font-size: 1.2em;"><strong>Threshold:</strong> {snap.get('101–175 Threshold', 'N/A')}</span><br>
+                            <span style="font-size: 1.1em;">{snap.get('Ranks 101–175', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
                         </div>
-                        <div style="text-align: center; padding: 8px; background-color: #0f0f0f; border-radius: 4px; border-left: 4px solid #27ae60;">
+                        <div style="text-align: center; padding: 8px; background-color: #1a1a1a; border-radius: 4px; border-left: 4px solid #27ae60;">
                             <strong style="color: #27ae60;"> 176–250 </strong><br>
-                            <span style="font-size: 0.8em;"><em>Threshold:</em> {snap.get('176–250 Threshold', 'N/A')}</span><br>
-                            <span style="font-size: 0.85em;">{snap.get('Ranks 176–250', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
+                            <span style="font-size: 1.2em;"><strong>Threshold:</strong> {snap.get('176–250 Threshold', 'N/A')}</span><br>
+                            <span style="font-size: 1.1em;">{snap.get('Ranks 176–250', 'N/A').replace(' players below threshold — ', ' Players Exposed<br>').replace(' expected exposure', ' Total Exposure')}</span>
                         </div>
-            </div>
-            """, unsafe_allow_html=True)
-
+                    </div>
+                    <!-- ADJUSTMENTS: New section for totals and adjustments -->
+                    <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #333; color: #ffffff;">
+                        <div style="margin-bottom: 4px;">{guarantee_total_line}</div>
+                        <div style="margin-bottom: 4px;">{income_protection_line}</div>
+                        <div>{newcomer_investment_line}</div><br>
+                        <div style="font-size:1.4em">{total_exposure.replace(' total expected exposure', ' Total Exposure')}<br></div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
             # Delete button
             if st.button(f"🗑️ Delete Snapshot {i + 1}", key=f"delete_snapshot_{i}", help="Delete this snapshot"):
                 st.session_state.exposure_snapshots.pop(i)
