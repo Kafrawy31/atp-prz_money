@@ -357,131 +357,259 @@ if uploaded_file is not None:
             f"**Total Newcomer Investment Exposure:** `${newcomer_exposure:,.0f}`"
         )
 
-    st.markdown("## Guarantee")
-    count0_expected, exposure0_expected = 0, 0 
-    count1_expected, exposure1_expected = 0, 0 
-    count2_expected, exposure2_expected = 0, 0 
-
-    if not df_baseline_2025.empty:
-        base_condition0_expected = (df_baseline_2025['sglrank'].between(1, 100) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_1_100))
-        base_condition1_expected = (df_baseline_2025['sglrank'].between(101, 175) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_101_175))
-        base_condition2_expected = (df_baseline_2025['sglrank'].between(176, 250) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_176_250))
-
-        snumtrn_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
-        if snumtrn_range and 'Events Played' in df_baseline_2025.columns:
-            df_baseline_2025 = df_baseline_2025[
-                df_baseline_2025['Events Played'].between(snumtrn_range[0], snumtrn_range[1])
-            ]
+    # --- Encapsulate the entire Guarantee section in an expander ---
+    with st.expander("Guarantee Details"):
+        # This header is now inside the expander
+        st.markdown("### Guarantee Exposure by Ranking Band")
         
-        carprz_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
-        if 'carprz' in df_baseline_2025.columns:
-            carprz_filter_expected = (df_baseline_2025['carprz'] < 15_000_000) 
+        # --- All your existing calculation logic goes here, indented ---
+        count0_expected, exposure0_expected = 0, 0 
+        count1_expected, exposure1_expected = 0, 0 
+        count2_expected, exposure2_expected = 0, 0 
 
-        signed_player_filter_expected = pd.Series(True, index=df_baseline_2025.index)
-        if use_signed_players_filter and signed_policy_col_exists:
-            signed_player_filter_expected = df_baseline_2025['Signed Policy'].astype(str).str.contains('P', na=False)
+        if not df_baseline_2025.empty:
+            base_condition0_expected = (df_baseline_2025['sglrank'].between(1, 100) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_1_100))
+            base_condition1_expected = (df_baseline_2025['sglrank'].between(101, 175) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_101_175))
+            base_condition2_expected = (df_baseline_2025['sglrank'].between(176, 250) & (df_baseline_2025['Net Prize Money (2025 Adjusted)'] < guarantee_176_250))
+
+            snumtrn_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
+            if snumtrn_range and 'Events Played' in df_baseline_2025.columns:
+                df_baseline_2025 = df_baseline_2025[
+                    df_baseline_2025['Events Played'].between(snumtrn_range[0], snumtrn_range[1])
+                ]
+            
+            carprz_filter_expected = pd.Series(True, index=df_baseline_2025.index) 
+            if 'carprz' in df_baseline_2025.columns:
+                carprz_filter_expected = (df_baseline_2025['carprz'] < 15_000_000) 
+
+            signed_player_filter_expected = pd.Series(True, index=df_baseline_2025.index)
+            if use_signed_players_filter and signed_policy_col_exists:
+                signed_player_filter_expected = df_baseline_2025['Signed Policy'].astype(str).str.contains('P', na=False)
+            
+            mask0_expected = base_condition0_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
+            count0_expected = mask0_expected.sum()
+            if count0_expected > 0: 
+                exposure0_expected = (guarantee_1_100 - df_baseline_2025.loc[mask0_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_1_100
+
+            mask1_expected = base_condition1_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
+            count1_expected = mask1_expected.sum()
+            if count1_expected > 0: 
+                exposure1_expected = (guarantee_101_175 - df_baseline_2025.loc[mask1_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_101_175
+
+            mask2_expected = base_condition2_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
+            count2_expected = mask2_expected.sum()
+            if count2_expected > 0: 
+                exposure2_expected = (guarantee_176_250 - df_baseline_2025.loc[mask2_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_176_250
         
-        mask0_expected = base_condition0_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
-        count0_expected = mask0_expected.sum()
-        if count0_expected > 0: 
-            exposure0_expected = (guarantee_1_100 - df_baseline_2025.loc[mask0_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_1_100
+        c0_exp, c1_exp, c2_exp = st.columns(3)
+        c0_exp.metric(f"Ranks 1–100: # below ${guarantee_1_100:,.0f}", count0_expected, f"${exposure0_expected:,.0f} total expected exposure")
+        c1_exp.metric(f"Ranks 101–175: # below ${guarantee_101_175:,.0f}", count1_expected, f"${exposure1_expected:,.0f} total expected exposure")
+        c2_exp.metric(f"Ranks 176–250: # below ${guarantee_176_250:,.0f}", count2_expected, f"${exposure2_expected:,.0f} total expected exposure")
 
-        mask1_expected = base_condition1_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
-        count1_expected = mask1_expected.sum()
-        if count1_expected > 0: 
-            exposure1_expected = (guarantee_101_175 - df_baseline_2025.loc[mask1_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_101_175
+        # --- Calculations for totals remain outside the expander if you need them elsewhere ---
+        # Or they can be moved inside if they are only relevant to the expander's content.
+        # For now, let's assume they are needed globally for the bar chart.
+        total_expected_count = count0_expected + count1_expected + count2_expected
+        total_expected_exposure = exposure0_expected + exposure1_expected + exposure2_expected
+        total_expected_exposure_with_protection_and_investment = total_expected_exposure + newcomer_exposure + income_protection_exposure
 
-        mask2_expected = base_condition2_expected & snumtrn_filter_expected & carprz_filter_expected & signed_player_filter_expected
-        count2_expected = mask2_expected.sum()
-        if count2_expected > 0: 
-            exposure2_expected = (guarantee_176_250 - df_baseline_2025.loc[mask2_expected, 'Net Prize Money (2025 Adjusted)']).sum() * multiplier_176_250
-    
-    c0_exp, c1_exp, c2_exp = st.columns(3)
-    c0_exp.metric(f"Ranks 1–100: # below ${guarantee_1_100:,.0f}", count0_expected, f"${exposure0_expected:,.0f} total expected exposure")
-    c1_exp.metric(f"Ranks 101–175: # below ${guarantee_101_175:,.0f}", count1_expected, f"${exposure1_expected:,.0f} total expected exposure")
-    c2_exp.metric(f"Ranks 176–250: # below ${guarantee_176_250:,.0f}", count2_expected, f"${exposure2_expected:,.0f} total expected exposure")
-
-    # Compute total expected players and exposure
-    total_expected_count = count0_expected + count1_expected + count2_expected
-    total_expected_exposure = exposure0_expected + exposure1_expected + exposure2_expected
-    total_expected_exposure_with_protection_and_investment = exposure0_expected + exposure1_expected + exposure2_expected + newcomer_exposure + income_protection_exposure
-
-    # Display total
-    st.markdown(
-        f"""
-        <div style="background-color: #0f0f0f; border: 1px solid #cce5ff; border-radius: 8px; display:flex; flex-direction:column;
-                    padding: 10px;">
-            <p style="font-size:1.4em;"><strong>Total Expected (All Ranks): ${total_expected_exposure_with_protection_and_investment:,.0f}</strong></p><br>
-            <div style="font-size: 0.9rem; display:flex; flex-direction:row; flex:1; justify-content:space-between; margin-bottom:15px; margin-top:0px; padding:0px;">
-                <div>
-                    <p style="font-size:1.3em; font-weight:bold; padding:0px;">Baseline</p>
-                    Players Below Threshold: <strong>{total_expected_count}</strong><br>
-                    Baseline Exposure: <strong>${total_expected_exposure:,.0f}</strong><br>
-                </div>
-                <div>
-                <p style="font-size:1.3em; font-weight:bold;">Newcomer investment</p>
-                    Newcomer Count: <strong>{newcomer_players:,.0f}</strong><br>
-                    Newcomer Investment: <strong>${newcomer_exposure:,.0f}</strong><br>
-                </div>
-                <div>
-                <p style="font-size:1.3em; font-weight:bold;">Incomer protection</p>
-                    Income Protection count: <strong>{income_protection_players:,.0f}</strong><br>
-                    Incone Protection exposure: <strong>${income_protection_exposure:,.0f}</strong><br>
-                </div>    
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown("---")
-    st.markdown("## Total signatures")
-    if use_signed_players_filter:
-        # --- Count signed players in 2025 (filtered only by Baseline Year and Signed Policy) ---
-        signed_2025_df = df[(df['Baseline Year'] == 2025) & df['Signed Policy'].astype(str).str.contains('P', na=False)].copy()
-
-        signed_count_1_100 = signed_2025_df[signed_2025_df['sglrank'].between(1, 100)].shape[0]
-        signed_count_101_175 = signed_2025_df[signed_2025_df['sglrank'].between(101, 175)].shape[0]
-        signed_count_176_250 = signed_2025_df[signed_2025_df['sglrank'].between(176, 250)].shape[0]
-        total_signed = signed_count_1_100 + signed_count_101_175 + signed_count_176_250
-
-        # Display signed player counts
-        c0_signed, c1_signed, c2_signed = st.columns(3)
-        c0_signed.metric("Signed Players (1–100)", signed_count_1_100)
-        c1_signed.metric("Signed Players (101–175)", signed_count_101_175)
-        c2_signed.metric("Signed Players (176–250)", signed_count_176_250)
-
+        # Display total
         st.markdown(
             f"""
-            <div style="background-color: #0f0f0f; border: 1px solid #ffffff; border-radius: 8px;
-                        padding: 10px; margin-top: 0.5rem;">
-                <strong>Total Signed Players (2025):</strong>
-                <span style="font-size: 0.9rem;"><strong>{total_signed}</strong></span>
+            <div style="background-color: #0f0f0f; border: 1px solid #cce5ff; border-radius: 8px; display:flex; flex-direction:column;
+                        padding: 10px;">
+                <p style="font-size:1.4em;"><strong>Total Expected (All Ranks): ${total_expected_exposure_with_protection_and_investment:,.0f}</strong></p><br>
+                <div style="font-size: 0.9rem; display:flex; flex-direction:row; flex:1; justify-content:space-between; margin-bottom:15px; margin-top:0px; padding:0px;">
+                    <div>
+                        <p style="font-size:1.3em; font-weight:bold; padding:0px;">Baseline</p>
+                        Players Below Threshold: <strong>{total_expected_count}</strong><br>
+                        Baseline Exposure: <strong>${total_expected_exposure:,.0f}</strong><br>
+                    </div>
+                    <div>
+                    <p style="font-size:1.3em; font-weight:bold;">Newcomer investment</p>
+                        Newcomer Count: <strong>{newcomer_players:,.0f}</strong><br>
+                        Newcomer Investment: <strong>${newcomer_exposure:,.0f}</strong><br>
+                    </div>
+                    <div>
+                    <p style="font-size:1.3em; font-weight:bold;">Incomer protection</p>
+                        Income Protection count: <strong>{income_protection_players:,.0f}</strong><br>
+                        Incone Protection exposure: <strong>${income_protection_exposure:,.0f}</strong><br>
+                    </div>    
+                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-        # --- % of signed players (relative to total in each band, filtered only by Baseline Year) ---
-        df_all_2025 = df[df['Baseline Year'] == 2025]
-
-        total_1_100 = df_all_2025[df_all_2025['sglrank'].between(1, 100)].shape[0]
-        total_101_175 = df_all_2025[df_all_2025['sglrank'].between(101, 175)].shape[0]
-        total_176_250 = df_all_2025[df_all_2025['sglrank'].between(176, 250)].shape[0]
-
-        pct_1_100 = (signed_count_1_100 / total_1_100 * 100) if total_1_100 else 0
-        pct_101_175 = (signed_count_101_175 / total_101_175 * 100) if total_101_175 else 0
-        pct_176_250 = (signed_count_176_250 / total_176_250 * 100) if total_176_250 else 0
-
         st.markdown("---")
-        st.markdown("### % of Signed Players by Ranking Band (2025)")
-        c0_pct, c1_pct, c2_pct = st.columns(3)
-        c0_pct.metric("Ranks 1–100", f"{pct_1_100:.1f}%", f"{signed_count_1_100}/{total_1_100} signed")
-        c1_pct.metric("Ranks 101–175", f"{pct_101_175:.1f}%", f"{signed_count_101_175}/{total_101_175} signed")
-        c2_pct.metric("Ranks 176–250", f"{pct_176_250:.1f}%", f"{signed_count_176_250}/{total_176_250} signed")
+        st.markdown("## Total signatures")
+        if use_signed_players_filter:
+            # --- Count signed players in 2025 (filtered only by Baseline Year and Signed Policy) ---
+            signed_2025_df = df[(df['Baseline Year'] == 2025) & df['Signed Policy'].astype(str).str.contains('P', na=False)].copy()
 
-    # --- Data Filtering ---
-    # Start with a fresh copy for the main filtered section
+            signed_count_1_100 = signed_2025_df[signed_2025_df['sglrank'].between(1, 100)].shape[0]
+            signed_count_101_175 = signed_2025_df[signed_2025_df['sglrank'].between(101, 175)].shape[0]
+            signed_count_176_250 = signed_2025_df[signed_2025_df['sglrank'].between(176, 250)].shape[0]
+            total_signed = signed_count_1_100 + signed_count_101_175 + signed_count_176_250
+
+            # Display signed player counts
+            c0_signed, c1_signed, c2_signed = st.columns(3)
+            c0_signed.metric("Signed Players (1–100)", signed_count_1_100)
+            c1_signed.metric("Signed Players (101–175)", signed_count_101_175)
+            c2_signed.metric("Signed Players (176–250)", signed_count_176_250)
+
+            st.markdown(
+                f"""
+                <div style="background-color: #0f0f0f; border: 1px solid #ffffff; border-radius: 8px;
+                            padding: 10px; margin-top: 0.5rem;">
+                    <strong>Total Signed Players (2025):</strong>
+                    <span style="font-size: 0.9rem;"><strong>{total_signed}</strong></span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # --- % of signed players (relative to total in each band, filtered only by Baseline Year) ---
+            df_all_2025 = df[df['Baseline Year'] == 2025]
+
+            total_1_100 = df_all_2025[df_all_2025['sglrank'].between(1, 100)].shape[0]
+            total_101_175 = df_all_2025[df_all_2025['sglrank'].between(101, 175)].shape[0]
+            total_176_250 = df_all_2025[df_all_2025['sglrank'].between(176, 250)].shape[0]
+
+            pct_1_100 = (signed_count_1_100 / total_1_100 * 100) if total_1_100 else 0
+            pct_101_175 = (signed_count_101_175 / total_101_175 * 100) if total_101_175 else 0
+            pct_176_250 = (signed_count_176_250 / total_176_250 * 100) if total_176_250 else 0
+
+            st.markdown("---")
+            st.markdown("### % of Signed Players by Ranking Band (2025)")
+            c0_pct, c1_pct, c2_pct = st.columns(3)
+            c0_pct.metric("Ranks 1–100", f"{pct_1_100:.1f}%", f"{signed_count_1_100}/{total_1_100} signed")
+            c1_pct.metric("Ranks 101–175", f"{pct_101_175:.1f}%", f"{signed_count_101_175}/{total_101_175} signed")
+            c2_pct.metric("Ranks 176–250", f"{pct_176_250:.1f}%", f"{signed_count_176_250}/{total_176_250} signed")
+
+
+    ##--- Visualization of Total Exposure Breakdown ---
+    with st.expander("Break down"):
+        st.markdown("### Exposure Breakdown (with Stacked Guarantee)")
+
+        # 1. Define the data components.
+        categories = ['Income Protection', 'Newcomer Investment', 'Guarantee']
+        income_value = income_protection_exposure
+        newcomer_value = newcomer_exposure
+        guarantee_ranks = {
+            'Ranks 1-100': exposure0_expected,
+            'Ranks 101-175': exposure1_expected,
+            'Ranks 176-250': exposure2_expected
+        }
+
+        # Calculate the total for the guarantee (stacked bar)
+        guarantee_total = sum(guarantee_ranks.values())
+
+        # 2. Define custom colors.
+        colors = {
+            'Income Protection': '#636EFA',      # Blue
+            'Newcomer Investment': '#EF553B',    # Red
+            'Ranks 1-100': '#00CC96',            # Green
+            'Ranks 101-175': '#AB63FA',          # Purple
+            'Ranks 176-250': '#FFA15A'           # Orange
+        }
+
+        # 3. Create the figure using Plotly Graph Objects.
+        fig = go.Figure()
+
+        # --- Add the traces for the bars that are NOT stacked ---
+        fig.add_trace(go.Bar(
+            x=['Income Protection'],
+            y=[income_value],
+            name='Income Protection',
+            marker_color=colors['Income Protection']
+        ))
+
+        fig.add_trace(go.Bar(
+            x=['Newcomer Investment'],
+            y=[newcomer_value],
+            name='Newcomer Investment',
+            marker_color=colors['Newcomer Investment']
+        ))
+
+        # --- Add the traces for the stacked bar segments ---
+        for rank_name, value in guarantee_ranks.items():
+            fig.add_trace(go.Bar(
+                x=['Guarantee'],
+                y=[value],
+                name=f'Guarantee ({rank_name})',
+                marker_color=colors[rank_name]
+            ))
+
+        # 4. Update the layout to enable stacking and improve appearance.
+        fig.update_layout(
+            barmode='stack',
+            title_text="Exposure Breakdown by Category",
+            yaxis_title="Total Exposure ($)",
+            xaxis_title=None,
+            legend_title="Exposure Components"
+        )
+
+        # 5. Add annotations for totals above each bar
+        fig.add_annotation(
+            x='Income Protection',
+            y=income_value,
+            text=f"${income_value:,.0f}",
+            showarrow=False,
+            yshift=10,  # Positions text above the bar
+            font=dict(size=12, color="white")
+        )
+
+        fig.add_annotation(
+            x='Newcomer Investment',
+            y=newcomer_value,
+            text=f"${newcomer_value:,.0f}",
+            showarrow=False,
+            yshift=10,
+            font=dict(size=12, color="white")
+        )
+
+        fig.add_annotation(
+            x='Guarantee',
+            y=guarantee_total,
+            text=f"${guarantee_total:,.0f}",
+            showarrow=False,
+            yshift=10,
+            font=dict(size=12, color="white")
+        )
+
+        # 6. Display the Plotly chart in Streamlit.
+        st.plotly_chart(fig, use_container_width=True)
+
+
+        # --- Optional: Display the data summary table ---
+        st.write("Exposure Data Summary:")
+        summary_data = {
+            "Income Protection": income_value,
+            "Newcomer Investment": newcomer_value,
+            "Guarantees" : guarantee_ranks['Ranks 1-100'] + guarantee_ranks['Ranks 101-175'] + guarantee_ranks['Ranks 176-250'],
+            "Total" : guarantee_ranks['Ranks 1-100'] + guarantee_ranks['Ranks 101-175'] + guarantee_ranks['Ranks 176-250'] + income_value
+        }
+        df_summary = pd.DataFrame.from_dict(summary_data, orient='index', columns=['Exposure ($)'])
+        styled = (
+            df_summary
+            .style
+            .format("${:,.0f}")
+            .set_properties(**{
+                'text-align': 'center',
+                'color': 'white'
+            })
+        )
+
+        # This is a workaround - apply styling to the entire dataframe including headers
+        styled = styled.set_table_styles({
+            'th': [{'selector': '', 'props': [('color', 'white'), ('text-align', 'center')]}]
+        })
+
+        st.dataframe(styled)
+       # --- Initialize session state if not present ---
+    #--- Data Filtering ---
+    #Start with a fresh copy for the main filtered section
     filtered_display = df.copy() 
 
     if year_column in df.columns and selected_years:
@@ -514,8 +642,7 @@ if uploaded_file is not None:
     if earnings_column in filtered_display.columns and not filtered_display[earnings_column].dropna().empty:
         earnings = filtered_display[earnings_column].dropna().sort_values().reset_index(drop=True)
 
-    
-        # --- Initialize session state if not present ---
+
     
     if 'exposure_snapshots' not in st.session_state:
         st.session_state.exposure_snapshots = []
@@ -527,21 +654,30 @@ if uploaded_file is not None:
         guarantee_total_exposure = exposure0_expected + exposure1_expected + exposure2_expected
 
         snapshot = {
-            "1–100 Threshold": f"${guarantee_1_100:,.0f} (x{multiplier_1_100})",
-            "101–175 Threshold": f"${guarantee_101_175:,.0f} (x{multiplier_101_175})",
-            "176–250 Threshold": f"${guarantee_176_250:,.0f} (x{multiplier_176_250})",
-            "Ranks 1–100": f"{count0_expected} players below threshold — ${exposure0_expected:,.0f} expected exposure",
-            "Ranks 101–175": f"{count1_expected} players below threshold — ${exposure1_expected:,.0f} expected exposure",
-            "Ranks 176–250": f"{count2_expected} players below threshold — ${exposure2_expected:,.0f} expected exposure",
-            "Guarantee Total": f"{guarantee_total_players} players — ${guarantee_total_exposure:,.0f} exposure",
-            "Income Protection Adjustment": f"{income_protection_players} players — ${income_protection_exposure:,.0f}",
-            "Newcomer Investment Adjustment": f"{newcomer_players} players — ${newcomer_exposure:,.0f}",
-            "Income Protection Players": income_protection_players,
-            "Income Protection Amount": income_protection_amount,
-            "Newcomer Players": newcomer_players,
-            "Newcomer Amount": newcomer_amount,
-            "Total": f"{total_expected_count} total players — ${total_expected_exposure_with_protection_and_investment:,.0f} total expected exposure",
-            "Signed Filter Used": use_signed_players_filter
+        # --- Formatted strings for display ---
+        "1–100 Threshold": f"${guarantee_1_100:,.0f} (x{multiplier_1_100})",
+        "101–175 Threshold": f"${guarantee_101_175:,.0f} (x{multiplier_101_175})",
+        "176–250 Threshold": f"${guarantee_176_250:,.0f} (x{multiplier_176_250})",
+        "Ranks 1–100": f"{count0_expected} players below threshold — ${exposure0_expected:,.0f} expected exposure",
+        "Ranks 101–175": f"{count1_expected} players below threshold — ${exposure1_expected:,.0f} expected exposure",
+        "Ranks 176–250": f"{count2_expected} players below threshold — ${exposure2_expected:,.0f} expected exposure",
+        "Guarantee Total": f"{guarantee_total_players} players — ${guarantee_total_exposure:,.0f} exposure",
+        "Newcomer Investment Adjustment": f"{newcomer_players} players — ${newcomer_exposure:,.0f}",
+        "Total": f"{total_expected_count} total players — ${total_expected_exposure_with_protection_and_investment:,.0f} total expected exposure",
+        
+        # --- Raw numeric values for calculations ---
+        "Ranks 1–100 amount": exposure0_expected,
+        "Ranks 101–175 amount": exposure1_expected,
+        "Ranks 176–250 amount": exposure2_expected,
+        "Guarantee Total amount": guarantee_total_exposure,
+        "Income Protection Amount": income_protection_exposure, # Note: You had 'Income Protection Adjustment' in the snapshot but used 'Amount' elsewhere. Standardizing to 'Amount' here.
+        "Newcomer Amount": newcomer_amount,
+        "Total amount": total_expected_exposure_with_protection_and_investment, # <-- ADD THIS LINE
+
+        # --- Other settings ---
+        "Income Protection Players": income_protection_players,
+        "Newcomer Players": newcomer_players,
+        "Signed Filter Used": use_signed_players_filter
         }
         st.session_state.exposure_snapshots.append(snapshot)
         st.success("Snapshot saved!")
@@ -614,10 +750,203 @@ if uploaded_file is not None:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            # Delete button
-            if st.button(f"🗑️ Delete Snapshot {i + 1}", key=f"delete_snapshot_{i}", help="Delete this snapshot"):
-                st.session_state.exposure_snapshots.pop(i)
-                st.rerun()
+
+                        # Delete button
+        if st.button(f"🗑️ Delete Snapshot {i + 1}", key=f"delete_snapshot_{i}", help="Delete this snapshot"):
+            st.session_state.exposure_snapshots.pop(i)
+            st.rerun()
+                    # --- Snapshot Comparison ---
+        if len(st.session_state.exposure_snapshots) >= 2:
+            st.markdown("## 🔄 Compare Snapshots")
+            
+            # Create two columns for snapshot selection
+            col1, col2 = st.columns(2)
+            
+            # Generate snapshot options for dropdowns
+            snapshot_options = [f"Snapshot {i+1}" for i in range(len(st.session_state.exposure_snapshots))]
+            
+            with col1:
+                snapshot_1_idx = st.selectbox("Select First Snapshot:", options=range(len(snapshot_options)), 
+                                            format_func=lambda x: snapshot_options[x], key="snap1")
+            
+            with col2:
+                snapshot_2_idx = st.selectbox("Select Second Snapshot:", options=range(len(snapshot_options)), 
+                                            format_func=lambda x: snapshot_options[x], key="snap2")
+            
+            if snapshot_1_idx != snapshot_2_idx:
+                snap1 = st.session_state.exposure_snapshots[snapshot_1_idx]
+                snap2 = st.session_state.exposure_snapshots[snapshot_2_idx]
+                
+                st.markdown("### Comparison Results")
+                
+                # Helper function to extract player count from formatted strings
+                def extract_player_count(text):
+                    if isinstance(text, str):
+                        import re
+                        match = re.search(r'(\d+)(?:\s+total)?\s+players?', text)
+                        if match:
+                            return int(match.group(1))
+                    return 0
+
+                # --- 1. DISPLAY TOTALS ---
+                snap1_total_exposure = snap1.get('Total amount', 0)
+                snap2_total_exposure = snap2.get('Total amount', 0)
+                snap1_total_players = extract_player_count(snap1.get('Total', ''))
+                snap2_total_players = extract_player_count(snap2.get('Total', ''))
+                
+                exposure_diff = snap2_total_exposure - snap1_total_exposure
+                players_diff = snap2_total_players - snap1_total_players
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(label="Total Exposure", value=f"${snap2_total_exposure:,.0f}", delta=f"${exposure_diff:,.0f}")
+                with col2:
+                    st.metric(label="Total Players", value=f"{snap2_total_players:,}", delta=f"{players_diff:,}")
+                with col3:
+                    if snap1_total_exposure > 0:
+                        pct_change = (exposure_diff / snap1_total_exposure) * 100
+                        st.metric(label="% Change in Exposure", value=f"{pct_change:+.1f}%", delta=None)
+
+                st.markdown("---") 
+
+                # --- 2. DISPLAY HIGH-LEVEL PLAYER BREAKDOWNS ---
+                st.markdown("#### Player Count Breakdowns")
+
+                snap1_guarantee_players = extract_player_count(snap1.get('Guarantee Total', ''))
+                snap2_guarantee_players = extract_player_count(snap2.get('Guarantee Total', ''))
+                guarantee_players_diff = snap2_guarantee_players - snap1_guarantee_players
+                
+                snap1_ip_players = snap1.get('Income Protection Players', 0)
+                snap2_ip_players = snap2.get('Income Protection Players', 0)
+                ip_players_diff = snap2_ip_players - snap1_ip_players
+
+                snap1_newcomer_players = snap1.get('Newcomer Players', 0)
+                snap2_newcomer_players = snap2.get('Newcomer Players', 0)
+                newcomer_players_diff = snap2_newcomer_players - snap1_newcomer_players
+                
+                col4, col5, col6 = st.columns(3)
+                with col4:
+                    st.metric(label="Guarantee Players (Total)", value=f"{snap2_guarantee_players}", delta=f"{guarantee_players_diff}")
+                with col5:
+                    st.metric(label="Income Protection Players", value=f"{snap2_ip_players}", delta=f"{ip_players_diff}")
+                with col6:
+                    st.metric(label="Newcomer Players", value=f"{snap2_newcomer_players}", delta=f"{newcomer_players_diff}")
+
+                # --- 3. DISPLAY GUARANTEE PLAYER BREAKDOWN BY RANK TIER (NEW SECTION) ---
+                st.markdown("##### Guarantee Player Counts by Rank Tier")
+
+                # Ranks 1-100
+                snap1_rank1_players = extract_player_count(snap1.get('Ranks 1–100', ''))
+                snap2_rank1_players = extract_player_count(snap2.get('Ranks 1–100', ''))
+                rank1_players_diff = snap2_rank1_players - snap1_rank1_players
+
+                # Ranks 101-175
+                snap1_rank2_players = extract_player_count(snap1.get('Ranks 101–175', ''))
+                snap2_rank2_players = extract_player_count(snap2.get('Ranks 101–175', ''))
+                rank2_players_diff = snap2_rank2_players - snap1_rank2_players
+
+                # Ranks 176-250
+                snap1_rank3_players = extract_player_count(snap1.get('Ranks 176–250', ''))
+                snap2_rank3_players = extract_player_count(snap2.get('Ranks 176–250', ''))
+                rank3_players_diff = snap2_rank3_players - snap1_rank3_players
+
+                col7, col8, col9 = st.columns(3)
+                with col7:
+                    st.metric(label="Players (Ranks 1-100)", value=snap2_rank1_players, delta=rank1_players_diff)
+                with col8:
+                    st.metric(label="Players (Ranks 101-175)", value=snap2_rank2_players, delta=rank2_players_diff)
+                with col9:
+                    st.metric(label="Players (Ranks 176-250)", value=snap2_rank3_players, delta=rank3_players_diff)
+                
+                # --- 4. DETAILED BREAKDOWN TABLE (Existing) ---
+                st.markdown("### Detailed Breakdown")
+                
+                comparison_data = []
+                metrics = [
+                    ('Guarantee Total', 'Guarantee Total amount'),
+                    ('Income Protection', 'Income Protection Amount'),
+                    ('Newcomer Investment', 'Newcomer Amount'),
+                    ('Ranks 1–100', 'Ranks 1–100 amount'),
+                    ('Ranks 101–175', 'Ranks 101–175 amount'),
+                    ('Ranks 176–250', 'Ranks 176–250 amount')
+                ]
+                
+                for metric_name, data_key in metrics:
+                    snap1_val = snap1.get(data_key, 0)
+                    snap2_val = snap2.get(data_key, 0)
+                    diff = snap2_val - snap1_val
+                    
+                    comparison_data.append({
+                        'Metric': metric_name,
+                        f'Snapshot {snapshot_1_idx + 1}': f"${snap1_val:,.0f}",
+                        f'Snapshot {snapshot_2_idx + 1}': f"${snap2_val:,.0f}",
+                        'Difference': f"${diff:+,.0f}"
+                    })
+                
+                df_comparison = pd.DataFrame(comparison_data)
+            # ... (The rest of your code for displaying the dataframes is correct and does not need to be changed) ...            
+                # Style the comparison table
+                styled_comparison = (
+                    df_comparison
+                    .style
+                    .set_properties(**{
+                        'text-align': 'center',
+                        'color': 'white'
+                    })
+                )
+                
+                st.dataframe(styled_comparison, use_container_width=True)
+                
+                # Settings comparison
+                st.markdown("### Settings Comparison")
+                
+                settings_comparison = []
+                
+                # Extract threshold settings
+                thresholds = ['1–100 Threshold', '101–175 Threshold', '176–250 Threshold']
+                for threshold in thresholds:
+                    snap1_setting = snap1.get(threshold, 'N/A')
+                    snap2_setting = snap2.get(threshold, 'N/A')
+                    
+                    settings_comparison.append({
+                        'Setting': threshold,
+                        f'Snapshot {snapshot_1_idx + 1}': snap1_setting,
+                        f'Snapshot {snapshot_2_idx + 1}': snap2_setting,
+                        'Same': '✅' if snap1_setting == snap2_setting else '❌'
+                    })
+                
+                # Add signed filter comparison
+                snap1_signed = snap1.get('Signed Filter Used', False)
+                snap2_signed = snap2.get('Signed Filter Used', False)
+                
+                settings_comparison.append({
+                    'Setting': 'Signed Players Filter',
+                    f'Snapshot {snapshot_1_idx + 1}': 'Yes' if snap1_signed else 'No',
+                    f'Snapshot {snapshot_2_idx + 1}': 'Yes' if snap2_signed else 'No',
+                    'Same': '✅' if snap1_signed == snap2_signed else '❌'
+                })
+                
+                df_settings = pd.DataFrame(settings_comparison)
+                
+                styled_settings = (
+                    df_settings
+                    .style
+                    .set_properties(**{
+                        'text-align': 'center',
+                        'color': 'white'
+                    })
+                )
+                
+                st.dataframe(styled_settings, use_container_width=True)
+                
+            else:
+                st.info("Please select two different snapshots to compare.")
+
+        elif len(st.session_state.exposure_snapshots) == 1:
+            st.info("Save at least 2 snapshots to enable comparison feature.")
+        else:
+            st.info("No snapshots saved yet. Save some snapshots above to enable comparison.")
+
 
     # --- Main Title ---
     title_year_prefix = "Baseline Year(s):"
