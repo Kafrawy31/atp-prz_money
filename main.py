@@ -450,40 +450,25 @@ if uploaded_file is not None:
         )
 
         st.markdown("---")
-        st.markdown(f"## Total signatures ({year_str})")
-        # --- Total Signatures Section ---
+        # --- Revamped Total Signatures Section ---
+        st.markdown(f"## ✍️ Signatures ({year_str})")
+
         if use_signed_players_filter:
-            
-            # --- IMPORTANT CHANGE ---
+            # --- Data Calculation (No changes needed here) ---
             # To ignore all other filters, we start from the original, unfiltered `df`.
-            # We then apply *only* the year filter to create a clean context for this section.
             if selected_years:
                 df_for_signature_section = df[df['Baseline Year'].isin(selected_years)]
             else:
-                # If no year is selected, use an empty DataFrame to avoid errors
                 df_for_signature_section = pd.DataFrame(columns=df.columns)
 
-            # --- Calculations now use the isolated 'df_for_signature_section' ---
-
-            # 1. Get the signed players (Numerator for percentages)
-            # Filter for signed players from our clean, year-filtered DataFrame
+            # 1. Get signed players (Numerator)
             signed_df = df_for_signature_section[df_for_signature_section['Signed Policy'].astype(str).str.contains('P', na=False)]
-
             signed_count_1_100 = signed_df[signed_df['sglrank'].between(1, 100)].shape[0]
             signed_count_101_175 = signed_df[signed_df['sglrank'].between(101, 175)].shape[0]
             signed_count_176_250 = signed_df[signed_df['sglrank'].between(176, 250)].shape[0]
             total_signed = signed_count_1_100 + signed_count_101_175 + signed_count_176_250
-
-            # Display signed player counts
-            c0_signed, c1_signed, c2_signed = st.columns(3)
-            c0_signed.metric("Signed Players (1–100)", signed_count_1_100)
-            c1_signed.metric("Signed Players (101–175)", signed_count_101_175)
-            c2_signed.metric("Signed Players (176–250)", signed_count_176_250)
-
-            st.metric(label=f"Total Signed Players )", value=total_signed)
-
-            # 2. Get total players in the selected years (Denominator for percentages)
-            # The denominator also comes from our clean, year-filtered DataFrame
+            
+            # 2. Get total players in each band (Denominator)
             total_1_100 = df_for_signature_section[df_for_signature_section['sglrank'].between(1, 100)].shape[0]
             total_101_175 = df_for_signature_section[df_for_signature_section['sglrank'].between(101, 175)].shape[0]
             total_176_250 = df_for_signature_section[df_for_signature_section['sglrank'].between(176, 250)].shape[0]
@@ -493,14 +478,36 @@ if uploaded_file is not None:
             pct_101_175 = (signed_count_101_175 / total_101_175 * 100) if total_101_175 else 0
             pct_176_250 = (signed_count_176_250 / total_176_250 * 100) if total_176_250 else 0
 
-            st.markdown("---")
-            st.markdown(f"### % of Signed Players by Ranking Band ({year_str})")
-            c0_pct, c1_pct, c2_pct = st.columns(3)
-            c0_pct.metric("Ranks 1–100", f"{pct_1_100:.1f}%", f"{signed_count_1_100}/{total_1_100} signed")
-            c1_pct.metric("Ranks 101–175", f"{pct_101_175:.1f}%", f"{signed_count_101_175}/{total_101_175} signed")
-            c2_pct.metric("Ranks 176–250", f"{pct_176_250:.1f}%", f"{signed_count_176_250}/{total_176_250} signed")
+            # --- New Display Logic ---
+            st.markdown("### Signed Players by Ranking Band")
+            col1, col2, col3 = st.columns(3)
 
+            with col1:
+                st.metric(
+                    label="Ranks 1–100",
+                    value=f"{signed_count_1_100} / {total_1_100}",
+                    delta=f"{pct_1_100:.1f}% Signed"
+                )
+            
+            with col2:
+                st.metric(
+                    label="Ranks 101–175",
+                    value=f"{signed_count_101_175} / {total_101_175}",
+                    delta=f"{pct_101_175:.1f}% Signed"
+                )
 
+            with col3:
+                st.metric(
+                    label="Ranks 176–250",
+                    value=f"{signed_count_176_250} / {total_176_250}",
+                    delta=f"{pct_176_250:.1f}% Signed"
+                )
+            
+            # Display the grand total underneath
+            st.metric(label="Total Signed Players", value=total_signed)
+
+        else:
+            st.info("Enable the 'Use signed players filter' in the sidebar to see signature stats.")
     ##--- Visualization of Total Exposure Breakdown ---
     st.markdown("## 📊 Breakdown")
     with st.expander("Breakdown"):
@@ -665,42 +672,51 @@ if uploaded_file is not None:
     st.divider()
     st.markdown('## Snapshots & Comparisons')
     # --- Snapshot Creation ---
+    snapshot_name = st.text_input(
+            "Enter a name for this snapshot:",
+            placeholder="e.g., Baseline 2024 Scenario"
+        )
     if st.button("📸 Save Snapshot"):
-        # Calculate the new Guarantee Total
-        guarantee_total_players = count0_expected + count1_expected + count2_expected
-        guarantee_total_exposure = exposure0_expected + exposure1_expected + exposure2_expected
+        if snapshot_name:
+            # Calculate the new Guarantee Total
+            guarantee_total_players = count0_expected + count1_expected + count2_expected
+            guarantee_total_exposure = exposure0_expected + exposure1_expected + exposure2_expected
 
-        snapshot = {
-        "Selected Years": year_str,
-        "Adjusted Earnings Used": use_adjusted_earnings,
+            snapshot = {
+            "Selected Years": year_str,
+            "Adjusted Earnings Used": use_adjusted_earnings,
+            "Display Name": snapshot_name, 
+            # --- Formatted strings for display ---
+            "1–100 Threshold": f"${guarantee_1_100:,.0f} (x{multiplier_1_100})",
+            "101–175 Threshold": f"${guarantee_101_175:,.0f} (x{multiplier_101_175})",
+            "176–250 Threshold": f"${guarantee_176_250:,.0f} (x{multiplier_176_250})",
+            "Ranks 1–100": f"{count0_expected} players below threshold — ${exposure0_expected:,.0f} expected exposure",
+            "Ranks 101–175": f"{count1_expected} players below threshold — ${exposure1_expected:,.0f} expected exposure",
+            "Ranks 176–250": f"{count2_expected} players below threshold — ${exposure2_expected:,.0f} expected exposure",
+            "Guarantee Total": f"{guarantee_total_players} players — ${guarantee_total_exposure:,.0f} exposure",
+            "Newcomer Investment Adjustment": f"{newcomer_players} players — ${newcomer_exposure:,.0f}",
+            "Total": f"{total_expected_count} total players — ${total_expected_exposure_with_protection_and_investment:,.0f} total expected exposure",
+            
+            # --- Raw numeric values for calculations ---
+            "Ranks 1–100 amount": exposure0_expected,
+            "Ranks 101–175 amount": exposure1_expected,
+            "Ranks 176–250 amount": exposure2_expected,
+            "Guarantee Total amount": guarantee_total_exposure,
+            "Income Protection Amount": income_protection_exposure, # Note: You had 'Income Protection Adjustment' in the snapshot but used 'Amount' elsewhere. Standardizing to 'Amount' here.
+            "Newcomer Amount": newcomer_amount,
+            "Total amount": total_expected_exposure_with_protection_and_investment, # <-- ADD THIS LINE
 
-        # --- Formatted strings for display ---
-        "1–100 Threshold": f"${guarantee_1_100:,.0f} (x{multiplier_1_100})",
-        "101–175 Threshold": f"${guarantee_101_175:,.0f} (x{multiplier_101_175})",
-        "176–250 Threshold": f"${guarantee_176_250:,.0f} (x{multiplier_176_250})",
-        "Ranks 1–100": f"{count0_expected} players below threshold — ${exposure0_expected:,.0f} expected exposure",
-        "Ranks 101–175": f"{count1_expected} players below threshold — ${exposure1_expected:,.0f} expected exposure",
-        "Ranks 176–250": f"{count2_expected} players below threshold — ${exposure2_expected:,.0f} expected exposure",
-        "Guarantee Total": f"{guarantee_total_players} players — ${guarantee_total_exposure:,.0f} exposure",
-        "Newcomer Investment Adjustment": f"{newcomer_players} players — ${newcomer_exposure:,.0f}",
-        "Total": f"{total_expected_count} total players — ${total_expected_exposure_with_protection_and_investment:,.0f} total expected exposure",
-        
-        # --- Raw numeric values for calculations ---
-        "Ranks 1–100 amount": exposure0_expected,
-        "Ranks 101–175 amount": exposure1_expected,
-        "Ranks 176–250 amount": exposure2_expected,
-        "Guarantee Total amount": guarantee_total_exposure,
-        "Income Protection Amount": income_protection_exposure, # Note: You had 'Income Protection Adjustment' in the snapshot but used 'Amount' elsewhere. Standardizing to 'Amount' here.
-        "Newcomer Amount": newcomer_amount,
-        "Total amount": total_expected_exposure_with_protection_and_investment, # <-- ADD THIS LINE
+            # --- Other settings ---
+            "Income Protection Players": income_protection_players,
+            "Newcomer Players": newcomer_players,
+            "Signed Filter Used": use_signed_players_filter,
+            }
+            st.session_state.exposure_snapshots.append(snapshot)
+            st.success("Snapshot saved!")
+        else:
+        # --- If no name was entered, show a warning instead of saving ---
+            st.warning("Please enter a name for the snapshot before saving.")
 
-        # --- Other settings ---
-        "Income Protection Players": income_protection_players,
-        "Newcomer Players": newcomer_players,
-        "Signed Filter Used": use_signed_players_filter,
-        }
-        st.session_state.exposure_snapshots.append(snapshot)
-        st.success("Snapshot saved!")
 
     # --- Ultra-Compact Horizontal Snapshot Display ---
     if st.session_state.exposure_snapshots:
@@ -730,7 +746,7 @@ if uploaded_file is not None:
                 )
 
                 # Simplified header focusing only on the grand total
-                header_text = f"""Snapshot {i + 1}<br>
+                header_text = f"""{snap.get('Display Name')}<br>
                 {saved_years_text}<br>
                 {adjusted_earnings_text}<br>
                 {signed_filter_text}<br>
@@ -784,28 +800,78 @@ if uploaded_file is not None:
         if st.button(f"🗑️ Delete Snapshot {i + 1}", key=f"delete_snapshot_{i}", help="Delete this snapshot"):
             st.session_state.exposure_snapshots.pop(i)
             st.rerun()
-                    # --- Snapshot Comparison ---
+        # --- Snapshot Comparison ---
         if len(st.session_state.exposure_snapshots) >= 2:
             st.markdown("## 🔄 Compare Snapshots")
             
             # Create two columns for snapshot selection
             col1, col2 = st.columns(2)
             
-            # Generate snapshot options for dropdowns
-            snapshot_options = [f"Snapshot {i+1}" for i in range(len(st.session_state.exposure_snapshots))]
-            
             with col1:
-                snapshot_1_idx = st.selectbox("Select First Snapshot:", options=range(len(snapshot_options)), 
-                                            format_func=lambda x: snapshot_options[x], key="snap1")
+                # --- MODIFIED SELECTBOX ---
+                snapshot_1_idx = st.selectbox(
+                    label="Select First Snapshot:",
+                    # The options are the indices: 0, 1, 2,...
+                    options=range(len(st.session_state.exposure_snapshots)),
+                    # format_func tells the widget to DISPLAY the custom name for each index.
+                    # It will still RETURN the index (0, 1, 2,...) which is what your code needs.
+                    format_func=lambda x: st.session_state.exposure_snapshots[x].get("Display Name", f"Snapshot {x + 1}"),
+                    key="snap1",
+                    index=0 # Default to the first snapshot
+                )
             
             with col2:
-                snapshot_2_idx = st.selectbox("Select Second Snapshot:", options=range(len(snapshot_options)), 
-                                            format_func=lambda x: snapshot_options[x], key="snap2")
+                # Do the same for the second dropdown
+                snapshot_2_idx = st.selectbox(
+                    label="Select Second Snapshot:",
+                    options=range(len(st.session_state.exposure_snapshots)),
+                    format_func=lambda x: st.session_state.exposure_snapshots[x].get("Display Name", f"Snapshot {x + 1}"),
+                    key="snap2",
+                    index=1 # Default to the second snapshot for a better user experience
+                )
             
             if snapshot_1_idx != snapshot_2_idx:
+                def display_comparison_card(column, label, old_value, new_value, is_currency=False):
+                    """
+                    Renders a custom "Storytelling Card" in a specified column.
+                    Can format values as either plain numbers or currency.
+                    """
+                    diff = new_value - old_value
+                    
+                    # Determine color and arrow based on the difference
+                    if diff > 0:
+                        color, arrow, sign = "#4ADE80", "▲", "+"  # Green
+                    elif diff < 0:
+                        color, arrow, sign = "#F87171", "▼", ""   # Red
+                    else:
+                        color, arrow, sign = "#888888", "●", ""   # Gray
+
+                    # Format the numbers based on whether they represent currency
+                    if is_currency:
+                        diff_str = f"{sign}${diff:,.0f}"
+                        context_str = f"From ${old_value:,.0f} to ${new_value:,.0f}"
+                    else:
+                        diff_str = f"{sign}{diff:,}"
+                        context_str = f"From {old_value:,} to {new_value:,}"
+
+                    # Render the card using markdown
+                    column.markdown(f"""
+                    <div style="border: 1px solid #3a3a3a; border-radius: 8px; padding: 15px; text-align: center; height: 100%;">
+                        <p style="font-size: 1em; margin: 0; color: #aaa; text-transform: uppercase;">{label}</p>
+                        <p style="font-size: 2.2em; margin: 5px 0; color: {color}; font-weight: bold;">
+                            {arrow} {diff_str}
+                        </p>
+                        <p style="font-size: 0.9em; margin: 0; color: #888;">
+                            {context_str}
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
                 snap1 = st.session_state.exposure_snapshots[snapshot_1_idx]
                 snap2 = st.session_state.exposure_snapshots[snapshot_2_idx]
                 
+                snap1_name = snap1.get("Display Name", f"Snapshot {snapshot_1_idx + 1}")
+                snap2_name = snap2.get("Display Name", f"Snapshot {snapshot_2_idx + 1}")
+
                 st.markdown("### Comparison Results")
                 
                 # Helper function to extract player count from formatted strings
@@ -826,122 +892,186 @@ if uploaded_file is not None:
                 exposure_diff = snap2_total_exposure - snap1_total_exposure
                 players_diff = snap2_total_players - snap1_total_players
 
+                                # --- 1. DISPLAY TOTALS ---
+                snap1_total_exposure = snap1.get('Total amount', 0)
+                snap2_total_exposure = snap2.get('Total amount', 0)
+                snap1_total_players = extract_player_count(snap1.get('Total', ''))
+                snap2_total_players = extract_player_count(snap2.get('Total', ''))
+
                 col1, col2, col3 = st.columns(3)
 
-                # --- Column 1: Total Exposure ---
-                with col1:
-                    st.metric(label="Total Exposure", value=f"${snap2_total_exposure:,.0f}")
-                    
-                    # Manually create the colored delta with an arrow
-                    if exposure_diff > 0:
-                        arrow = "▲"
-                        color = "green"
-                    elif exposure_diff < 0:
-                        arrow = "▼"
-                        color = "red"
-                    else:
-                        arrow = ""
-                        color = "gray"
-                    
-                    # Only display the delta text if there is a change
-                    if arrow:
-                        st.markdown(
-                            f"<p style='color:{color}; font-size: 1rem; margin-top: -10px;'>"
-                            f"{arrow} ${exposure_diff:,.0f}"
-                            f"</p>", 
-                            unsafe_allow_html=True
-                        )
+                # Use the new card for Total Exposure and Total Players
+                display_comparison_card(col1, "Total Exposure", snap1_total_exposure, snap2_total_exposure, is_currency=True)
+                display_comparison_card(col2, "Total Players", snap1_total_players, snap2_total_players)
 
-                # --- Column 3: % Change in Exposure ---
+                # The % Change metric can stay as it is
                 with col3:
-                    pct_change = (exposure_diff / snap1_total_exposure) * 100
-                    st.metric(label="% Change in Exposure", value=f"{pct_change:+.1f}%")
-                    
-                    # Manually create the colored arrow
-                    # The value is already a delta, so we just add a visual indicator
-                    if pct_change > 0:
-                        arrow = "▲"
-                        color = "green"
-                    elif pct_change < 0:
-                        arrow = "▼"
-                        color = "red"
-                    else:
-                        arrow = ""
-                        color = "gray"
+                    if snap1_total_exposure > 0:
+                        pct_change = (exposure_diff / snap1_total_exposure) * 100
+                        st.metric(label="% Change in Exposure", value=f"{pct_change:+.1f}%")
 
-                    # Only display the arrow if there is a change
-                    if arrow:
-                        st.markdown(
-                            f"<p style='color:{color}; font-size: 1.2rem; margin-top: -10px;'>"
-                            f"{arrow}"
-                            f"</p>", 
-                            unsafe_allow_html=True
-                        )
+                st.markdown("---")
 
-                st.markdown("---") 
-
+                # --- 2. DISPLAY HIGH-LEVEL PLAYER BREAKDOWNS ---
                 # --- 2. DISPLAY HIGH-LEVEL PLAYER BREAKDOWNS ---
                 st.markdown("#### Player Count Breakdowns")
 
+                # Calculate differences (no change here)
                 snap1_guarantee_players = extract_player_count(snap1.get('Guarantee Total', ''))
                 snap2_guarantee_players = extract_player_count(snap2.get('Guarantee Total', ''))
-                guarantee_players_diff = snap2_guarantee_players - snap1_guarantee_players
-                
+
                 snap1_ip_players = snap1.get('Income Protection Players', 0)
                 snap2_ip_players = snap2.get('Income Protection Players', 0)
-                ip_players_diff = snap2_ip_players - snap1_ip_players
 
                 snap1_newcomer_players = snap1.get('Newcomer Players', 0)
                 snap2_newcomer_players = snap2.get('Newcomer Players', 0)
-                newcomer_players_diff = snap2_newcomer_players - snap1_newcomer_players
-                
-                col4, col5, col6 = st.columns(3)
-                with col4:
-                    st.metric(label="Guarantee Players (Total)", value=f"{snap2_guarantee_players}", delta=f"{guarantee_players_diff}")
-                with col5:
-                    st.metric(label="Income Protection Players", value=f"{snap2_ip_players}", delta=f"{ip_players_diff}")
-                with col6:
-                    st.metric(label="Newcomer Players", value=f"{snap2_newcomer_players}", delta=f"{newcomer_players_diff}")
 
-                # --- 3. DISPLAY GUARANTEE PLAYER BREAKDOWN BY RANK TIER (NEW SECTION) ---
+                # Create columns and use the new helper function
+                col4, col5, col6 = st.columns(3)
+                display_comparison_card(col4, "Guarantee Players", snap1_guarantee_players, snap2_guarantee_players)
+                display_comparison_card(col5, "Income Protection", snap1_ip_players, snap2_ip_players)
+                display_comparison_card(col6, "Newcomer Players", snap1_newcomer_players, snap2_newcomer_players)
+
+                # --- 3. DISPLAY GUARANTEE PLAYER BREAKDOWN BY RANK TIER ---
                 st.markdown("##### Guarantee Player Counts by Rank Tier")
 
-                # Ranks 1-100
+                # Calculate differences (no change here)
                 snap1_rank1_players = extract_player_count(snap1.get('Ranks 1–100', ''))
                 snap2_rank1_players = extract_player_count(snap2.get('Ranks 1–100', ''))
-                rank1_players_diff = snap2_rank1_players - snap1_rank1_players
 
-                # Ranks 101-175
                 snap1_rank2_players = extract_player_count(snap1.get('Ranks 101–175', ''))
                 snap2_rank2_players = extract_player_count(snap2.get('Ranks 101–175', ''))
-                rank2_players_diff = snap2_rank2_players - snap1_rank2_players
 
-                # Ranks 176-250
                 snap1_rank3_players = extract_player_count(snap1.get('Ranks 176–250', ''))
                 snap2_rank3_players = extract_player_count(snap2.get('Ranks 176–250', ''))
-                rank3_players_diff = snap2_rank3_players - snap1_rank3_players
 
+                # Create more columns and reuse the same helper function
                 col7, col8, col9 = st.columns(3)
-                with col7:
-                    st.metric(label="Players (Ranks 1-100)", value=snap2_rank1_players, delta=rank1_players_diff)
-                with col8:
-                    st.metric(label="Players (Ranks 101-175)", value=snap2_rank2_players, delta=rank2_players_diff)
-                with col9:
-                    st.metric(label="Players (Ranks 176-250)", value=snap2_rank3_players, delta=rank3_players_diff)
+                display_comparison_card(col7, "Ranks 1-100", snap1_rank1_players, snap2_rank1_players)
+                display_comparison_card(col8, "Ranks 101-175", snap1_rank2_players, snap2_rank2_players)
+                display_comparison_card(col9, "Ranks 176-250", snap1_rank3_players, snap2_rank3_players)
+
+                # --- 4. FINANCIAL EXPOSURE BREAKDOWNS ---
+                st.markdown("#### Financial Exposure Breakdowns")
+
+                # --- First Row: Guarantee Ranks ---
+                snap1_rank1_amount = snap1.get('Ranks 1–100 amount', 0)
+                snap2_rank1_amount = snap2.get('Ranks 1–100 amount', 0)
+                snap1_rank2_amount = snap1.get('Ranks 101–175 amount', 0)
+                snap2_rank2_amount = snap2.get('Ranks 101–175 amount', 0)
+                snap1_rank3_amount = snap1.get('Ranks 176–250 amount', 0)
+                snap2_rank3_amount = snap2.get('Ranks 176–250 amount', 0)
+
+                col10, col11, col12 = st.columns(3)
+                display_comparison_card(col10, "Ranks 1-100 Exposure", snap1_rank1_amount, snap2_rank1_amount, is_currency=True)
+                display_comparison_card(col11, "Ranks 101-175 Exposure", snap1_rank2_amount, snap2_rank2_amount, is_currency=True)
+                display_comparison_card(col12, "Ranks 176-250 Exposure", snap1_rank3_amount, snap2_rank3_amount, is_currency=True)
+
+                # --- Second Row: Totals by Category ---
+                st.markdown("<br>", unsafe_allow_html=True) # Add a little vertical space
+
+                snap1_guarantee_amount = snap1.get('Guarantee Total amount', 0)
+                snap2_guarantee_amount = snap2.get('Guarantee Total amount', 0)
+                snap1_ip_amount = snap1.get('Income Protection Amount', 0)
+                snap2_ip_amount = snap2.get('Income Protection Amount', 0)
+                snap1_newcomer_amount = snap1.get('Newcomer Amount', 0)
+                snap2_newcomer_amount = snap2.get('Newcomer Amount', 0)
+
+                col13, col14, col15 = st.columns(3)
+                display_comparison_card(col13, "Guarantee Exposure", snap1_guarantee_amount, snap2_guarantee_amount, is_currency=True)
+                display_comparison_card(col14, "Income Protection", snap1_ip_amount, snap2_ip_amount, is_currency=True)
+                display_comparison_card(col15, "Newcomer Exposure", snap1_newcomer_amount, snap2_newcomer_amount, is_currency=True)
+
+
+                
                 
                 # --- 4. DETAILED BREAKDOWN TABLE (Existing) ---
-                st.markdown("### Detailed Breakdown")
                 
                 comparison_data = []
                 metrics = [
                     ('Guarantee Total', 'Guarantee Total amount'),
-                    ('Income Protection', 'Income Protection Amount'),
-                    ('Newcomer Investment', 'Newcomer Amount'),
                     ('Ranks 1–100', 'Ranks 1–100 amount'),
                     ('Ranks 101–175', 'Ranks 101–175 amount'),
                     ('Ranks 176–250', 'Ranks 176–250 amount'),
+                    ('Income Protection', 'Income Protection Amount'),
+                    ('Newcomer Investment', 'Newcomer Amount'),
+                    ('Total','Total amount')
+
                 ]
                 
+                                # --- 5. VISUAL COMPARISON BAR CHART ---
+                st.markdown("### Visual Comparison")
+
+                # --- Step 1: Prepare the data for the chart ---
+                chart_categories = []
+                snap1_chart_values = []
+                snap2_chart_values = []
+
+                # This helper function will format the values for display on the chart
+                def format_value(value):
+                    """Formats a number into a compact string like $1.2M or $150.5k."""
+                    if value >= 1_000_000:
+                        return f"${value/1_000_000:.1f}M"
+                    if value >= 1_000:
+                        return f"${value/1_000:.1f}k"
+                    return f"${value:,.0f}"
+
+                for metric_name, data_key in metrics:
+                    if data_key:
+                        chart_categories.append(metric_name)
+                        snap1_chart_values.append(snap1.get(data_key, 0))
+                        snap2_chart_values.append(snap2.get(data_key, 0))
+
+                # Create the formatted text labels for each bar
+                snap1_text_labels = [format_value(v) for v in snap1_chart_values]
+                snap2_text_labels = [format_value(v) for v in snap2_chart_values]
+
+                # --- Step 2: Create the Plotly Figure ---
+                fig = go.Figure()
+
+                # Add a bar for the first snapshot's data
+                fig.add_trace(go.Bar(
+                    x=chart_categories,
+                    y=snap1_chart_values,
+                    name=snap1_name,
+                    marker_color='#1f77b4',
+                    text=snap1_text_labels,      # Pass the formatted labels to the 'text' property
+                    textposition='outside',      # Display the text outside (above) the bar
+                    textfont=dict(color='white') # Ensure text color is visible in dark mode
+                ))
+
+                # Add a bar for the second snapshot's data
+                fig.add_trace(go.Bar(
+                    x=chart_categories,
+                    y=snap2_chart_values,
+                    name=snap2_name,
+                    marker_color='#ff7f0e',
+                    text=snap2_text_labels,      # Pass the formatted labels here as well
+                    textposition='outside',
+                    textfont=dict(color='white')
+                ))
+
+                # --- Step 3: Customize the layout ---
+                fig.update_layout(
+                    barmode='group',
+                    title_text=f'Comparison: "{snap1_name}" vs "{snap2_name}"',
+                    xaxis_title="Breakdown Category",
+                    yaxis_title="Total Exposure ($)",
+                    legend_title="Snapshots",
+                    template='plotly_dark',
+                    # Add a top margin to prevent the text labels from being cut off
+                    margin=dict(t=100)
+                )
+                # Make the y-axis invisible but keep the gridlines for a cleaner look
+                fig.update_yaxes(showticklabels=False, title_text="")
+
+                # --- Step 4: Display the chart in Streamlit ---
+                st.plotly_chart(fig, use_container_width=True)
+
+
+                """"""
+                st.markdown("### Detailed Breakdown")
+
                 for metric_name, data_key in metrics:
                     snap1_val = snap1.get(data_key, 0)
                     snap2_val = snap2.get(data_key, 0)
@@ -949,8 +1079,8 @@ if uploaded_file is not None:
                     
                     comparison_data.append({
                         'Metric': metric_name,
-                        f'Snapshot {snapshot_1_idx + 1}': f"${snap1_val:,.0f}",
-                        f'Snapshot {snapshot_2_idx + 1}': f"${snap2_val:,.0f}",
+                        snap1_name: f"${snap1_val:,.0f}",
+                        snap2_name: f"${snap2_val:,.0f}",
                         'Difference': f"${diff:+,.0f}"
                     })
                 
@@ -982,56 +1112,52 @@ if uploaded_file is not None:
                 )
 
                 st.dataframe(styled_comparison, use_container_width=True)
-                
+                                
+
                 # Settings comparison
                 st.markdown("### Settings Comparison")
-                
+
                 settings_comparison = []
+
+                # --- Update all append calls in this section ---
                 snap1_years = snap1.get("Selected Years", "N/A")
                 snap2_years = snap2.get("Selected Years", "N/A")
-
                 settings_comparison.append({
                     'Setting': 'Selected Years',
-                    f'Snapshot {snapshot_1_idx + 1}': snap1_years,
-                    f'Snapshot {snapshot_2_idx + 1}': snap2_years,
+                    snap1_name: snap1_years,
+                    snap2_name: snap2_years,
                     'Same': '✅' if snap1_years == snap2_years else '❌'
                 })
-        
-                # Extract threshold settings
+
                 thresholds = ['1–100 Threshold', '101–175 Threshold', '176–250 Threshold']
                 for threshold in thresholds:
                     snap1_setting = snap1.get(threshold, 'N/A')
                     snap2_setting = snap2.get(threshold, 'N/A')
-                    
                     settings_comparison.append({
                         'Setting': threshold,
-                        f'Snapshot {snapshot_1_idx + 1}': snap1_setting,
-                        f'Snapshot {snapshot_2_idx + 1}': snap2_setting,
+                        snap1_name: snap1_setting,
+                        snap2_name: snap2_setting,
                         'Same': '✅' if snap1_setting == snap2_setting else '❌'
                     })
-                
-                # Add signed filter comparison
+
                 snap1_signed = snap1.get('Signed Filter Used', False)
                 snap2_signed = snap2.get('Signed Filter Used', False)
-                
                 settings_comparison.append({
                     'Setting': 'Signed Players Filter',
-                    f'Snapshot {snapshot_1_idx + 1}': 'Yes' if snap1_signed else 'No',
-                    f'Snapshot {snapshot_2_idx + 1}': 'Yes' if snap2_signed else 'No',
+                    snap1_name: 'Yes' if snap1_signed else 'No',
+                    snap2_name: 'Yes' if snap2_signed else 'No',
                     'Same': '✅' if snap1_signed == snap2_signed else '❌'
                 })
 
                 snap1_adj = snap1.get('Adjusted Earnings Used', False)
                 snap2_adj = snap2.get('Adjusted Earnings Used', False)
-
                 settings_comparison.append({
                     'Setting': 'Adjusted Earnings Used',
-                    f'Snapshot {snapshot_1_idx + 1}': 'Yes' if snap1_adj else 'No',
-                    f'Snapshot {snapshot_2_idx + 1}': 'Yes' if snap2_adj else 'No',
+                    snap1_name: 'Yes' if snap1_adj else 'No',
+                    snap2_name: 'Yes' if snap2_adj else 'No',
                     'Same': '✅' if snap1_adj == snap2_adj else '❌'
                 })
 
-                
                 df_settings = pd.DataFrame(settings_comparison)
                 
                 styled_settings = (
@@ -1044,7 +1170,7 @@ if uploaded_file is not None:
                 )
                 
                 st.dataframe(styled_settings, use_container_width=True)
-                
+
             else:
                 st.info("Please select two different snapshots to compare.")
 
